@@ -89,7 +89,9 @@ stages:
           
       - job: Windows
         pool:
-          vmImage: 'vs2017-win2016'
+          vmImage: 'win1803'
+        container:
+          image: xournalpp/windows-xournalpp-dependencies:latest
         displayName: 'Build for Windows'
         condition: always()
         steps:
@@ -98,8 +100,7 @@ stages:
               build_type: 'RelWithDebInfo'
               cmake_flags: ''
           - script: |
-              set PATH=%PATH%;%CD:~0,2%\msys64\usr\bin;%CD:~0,2%\msys64\mingw64\bin"
-              %CD:~0,2%\msys64\usr\bin\bash -lc "./build-setup.sh"
+              C:\msys64\usr\bin\bash -lc "./build-setup.sh"
             workingDirectory: ./windows-setup
             env:
               MSYS2_ARCH: x86_64
