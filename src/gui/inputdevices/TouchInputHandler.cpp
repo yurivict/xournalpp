@@ -169,6 +169,11 @@ void TouchInputHandler::zoomMotion(InputEvent* event)
 	double offsetX = std::get<0>(lastScrollPosition) - (centerX - lastZoomScrollCenterX);
 	double offsetY = std::get<1>(lastScrollPosition) - (centerY - lastZoomScrollCenterY);
 
+	g_message("\noffsetX: %f lastScrollPositionX: %f centerX: %f lastZoomScrollCenterX: %f"
+		   "\noffsetY: %f lastScrollPositionY: %f centerY: %f lastZoomScrollCenterY: %f",
+		   offsetX, std::get<0>(lastScrollPosition), centerX, lastZoomScrollCenterX,
+		   offsetY, std::get<1>(lastScrollPosition), centerY, lastZoomScrollCenterY);
+
 	zoomControl->setScrollPositionAfterZoom(offsetX, offsetY);
 	lastZoomScrollCenterX = centerX;
 	lastZoomScrollCenterY = centerY;
