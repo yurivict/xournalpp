@@ -33,6 +33,8 @@ steps:
 - script: |
     set PATH=%PATH%;C:\msys64\usr\bin;C:\msys64\mingw64\bin"
     C:\msys64\usr\bin\bash -lc "./build-portaudio.sh"
+    C:\msys64\usr\bin\bash -lc "echo 'ls -l /mingw64/bin/'"
+    C:\msys64\usr\bin\bash -lc "ls -l /mingw64/bin/"
   workingDirectory: ./windows-setup
   env:
     MSYS2_ARCH: x86_64
