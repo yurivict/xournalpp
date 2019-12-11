@@ -37,6 +37,27 @@ InstallDirRegKey HKCU "Software\Xournalpp" ""
 RequestExecutionLevel admin
 
 ;--------------------------------
+;Check for Visual C++ 14 or higher
+
+Function CheckRedistributableInstalled
+  Push $R0
+  ClearErrors
+   
+  ;try to read Version subkey to R0
+  ReadRegDword $R0 HKCR "Installer\Dependencies\VC,redist.x64,amd64,14.22,bundle\Dependents\{6361b579-2795-4886-b2a8-53d5239b6452}" "Version"
+
+  ;was there error or not?
+  IfErrors 0 NoErrors
+   
+  ;error occured, copy "Error" to R0
+  StrCpy $R0 "Error"
+
+  NoErrors:
+  
+    Exch $R0 
+FunctionEnd
+
+;--------------------------------
 ;Variables
 
 Var StartMenuFolder
@@ -54,13 +75,14 @@ Var StartMenuFolder
   !insertmacro MUI_PAGE_DIRECTORY
   
   ;Start Menu Folder Page Configuration
-  !define MUI_STARTMENUPAGE_REGISTRY_ROOT "HKCU" 
-  !define MUI_STARTMENUPAGE_REGISTRY_KEY "Software\Xournalpp" 
-  !define MUI_STARTMENUPAGE_REGISTRY_VALUENAME "Xournal++"
+  !define MUI_STARTMENUPAGE_REGISTRY_ROOT "HKCU"
+  !define MUI_STARTMENUPAGE_REGISTRY_KEY "Software\Xournalpp"
+  !define MUI_STARTMENUPAGE_REGISTRY_VALUENAME "Start Menu Folder"
   
   !insertmacro MUI_PAGE_STARTMENU Application $StartMenuFolder
   
   !insertmacro MUI_PAGE_INSTFILES
+  !insertmacro MUI_PAGE_FINISH
   
   !insertmacro MUI_UNPAGE_CONFIRM
   !insertmacro MUI_UNPAGE_INSTFILES
@@ -91,9 +113,21 @@ Section "Xournal++" SecXournalpp
 	!insertmacro MUI_STARTMENU_WRITE_BEGIN Application
 		;Create shortcuts
 		CreateDirectory "$SMPROGRAMS\$StartMenuFolder"
-		CreateShortcut "$SMPROGRAMS\$StartMenuFolder\Xournal++.lnk" "$INSTDIR\Bin\xournalpp.exe"
+		CreateShortcut "$SMPROGRAMS\$StartMenuFolder\Xournal++.lnk" "$INSTDIR\bin\xournalpp.exe"
 		CreateShortcut "$SMPROGRAMS\$StartMenuFolder\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
 	!insertmacro MUI_STARTMENU_WRITE_END
+	
+	;Check if we have Visual C++ redistributable installed
+    Call  CheckRedistributableInstalled
+    Pop $R0
+
+    ${If} $R0 == "Error"
+    inetc::get "https://download.visualstudio.microsoft.com/download/pr/cc0046d4-e7b4-45a1-bd46-b1c079191224/9c4042a4c2e6d1f661f4c58cf4d129e9/vc_redist.x64.exe" "$PLUGINSDIR\vc_redist.x64.exe"
+    ;TODO add a checksum test here?
+    File "$PLUGINSDIR\vc_redist.x64.exe" 	
+    ExecWait '"$PLUGINSDIR\vc_redist.x64.exe"  /passive /norestart'
+    SetRebootFlag true
+    ${EndIf}
 
 SectionEnd
 
