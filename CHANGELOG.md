@@ -16,10 +16,41 @@
       file a bug report and deactivate it in the settings.
     * Zoom gesture reimplemented for better compatibility
 * LaTeX
-    * Added support for `\newline`
+    * Added support for `\newline
+    * Introduced a global template file allowing vast customization of the
+      LaTeX tool.
+    * Introduced a LaTeX settings panel for setting the global template
+      file, defining the LaTeX generation command and testing the LaTeX 
+      configuration.
+* Pdf export
+    * The title of the exported pdf will now show the filename without full 
+    path.
+    * Fixed a pdf export bug with dashed lines.
+* Splines
+    * Added cubic splines as a drawing tool. Click for settings anchor points
+     (knots) and drag to create non-trivial tangents. Backspace key,
+     arrow keys, s and Shift+s allow to delete/modifiy the last set knot/its
+     tangent. Escape key and double click exit the spline drawing mode.
+    * Made the spline tool aware of tapping and user selection.
+    * Made the anchor points of the spline subject to grid snapping.
 * Misc
     * Non-visible refactoring and code cleanup (see #1279 for details)
     * Updated translations
+    * Fixed a bug with the pdf cache, which lead to background pages
+      mixed from different pdf-files.
+    * Made the eraser more accurate.
+    * Added a menu toggle item for showing/hiding the toolbar, bound to F9.
+    * Added a new mode for drawing without pen icon.
+    * Fixed a crash resulting from selecting objects on a different layer.
+    * Added a 16 kHz sample rate and fixed some small inconsistencies.
+    * Fixed the mode for attaching a pdf-file to a xopp-file.
+    * Fixed the page count after removing a page.
+    * Added a Lua plugin for taking a screenshot and saving it to a file.
+    * Added Ubuntu 20.04 as a release build.
+    * Fixed a cursor update bug.
+    * Improved the object selection algorithm.
+    * Added command line options for showing the version.
+    * Made the grid size configurable.
 
 ## 1.0.17
 
