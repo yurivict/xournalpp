@@ -35,7 +35,7 @@ void StrokeView::drawEraseableStroke(cairo_t* cr, Stroke* s) {
 }
 
 /**
- * Change cairo source, used to draw hilighter transparent,
+ * Change cairo source, used to draw highlighter transparent,
  * but only if not currently drawing and so on (yes, complicated)
  */
 void StrokeView::changeCairoSource(bool markAudioStroke) {
@@ -45,7 +45,7 @@ void StrokeView::changeCairoSource(bool markAudioStroke) {
     if (s->getFill() != -1 && s->getToolType() != STROKE_TOOL_HIGHLIGHTER) {
         cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
 
-        // Set the color and transparency
+        // Set the color and opacity
         DocumentView::applyColor(cr, s, s->getFill());
 
         drawFillStroke();

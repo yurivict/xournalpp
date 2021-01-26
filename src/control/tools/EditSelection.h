@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,7 @@
 #include "model/Font.h"
 #include "model/PageRef.h"
 #include "model/Snapping.h"
+#include "undo/UndoAction.h"
 #include "view/ElementContainer.h"
 
 #include "CursorSelectionType.h"
@@ -30,7 +32,6 @@ class Layer;
 class XojPageView;
 class Selection;
 class Element;
-class UndoAction;
 class EditSelectionContents;
 class DeleteUndoAction;
 
@@ -113,23 +114,19 @@ public:
      */
     int getYOnViewAbsolute();
 
-    /**
-     * Get the width in View coordinates
-     */
-    int getViewWidth();
-
-    /**
-     * Get the height in View coordinates
-     */
-    int getViewHeight();
-
 public:
     /**
      * Sets the tool size for pen or eraser, returns an undo action
      * (or nullptr if nothing is done)
      */
-    UndoAction* setSize(ToolSize size, const double* thicknessPen, const double* thicknessHilighter,
+    UndoAction* setSize(ToolSize size, const double* thicknessPen, const double* thicknessHighlighter,
                         const double* thicknessEraser);
+
+    /**
+     * Set the line style of all strokes, return an undo action
+     * (Or nullptr if nothing done)
+     */
+    UndoActionPtr setLineStyle(LineStyle style);
 
     /**
      * Set the color of all elements, return an undo action
@@ -165,10 +162,14 @@ public:
     void addElement(Element* e, Layer::ElementIndex order = Layer::InvalidElementIndex);
 
     /**
-     * Returns all containig elements of this selections
+     * Returns all containing elements of this selection
      */
     vector<Element*>* getElements();
 
+    /**
+     * Returns the insert order of this selection
+     */
+    std::deque<std::pair<Element*, Layer::ElementIndex>> const& getInsertOrder() const;
     /**
      * Finish the current movement
      * (should be called in the mouse-button-released event handler)

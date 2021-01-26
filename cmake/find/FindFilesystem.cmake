@@ -259,7 +259,7 @@ elseif (NOT _found AND "ghc" IN_LIST want_components)
     set (GHC_FILESYSTEM ghcFilesystem_git)
     ExternalProject_Add(${GHC_FILESYSTEM}
       GIT_REPOSITORY "https://github.com/gulrak/filesystem.git"
-      GIT_TAG "v1.3.2"
+      GIT_TAG "v1.3.8"
       LOG_DOWNLOAD 1
       CONFIGURE_COMMAND ""
       BUILD_COMMAND ""
@@ -276,6 +276,7 @@ elseif (NOT _found AND "ghc" IN_LIST want_components)
     ExternalProject_Get_Property(${GHC_FILESYSTEM} SOURCE_DIR)
     file(MAKE_DIRECTORY "${SOURCE_DIR}/include")
     target_include_directories(std_filesystem INTERFACE "${SOURCE_DIR}/include")
+    target_compile_definitions(std_filesystem INTERFACE -DGHC_FILESYSTEM)
 
     add_library(std::filesystem ALIAS std_filesystem)
 endif ()

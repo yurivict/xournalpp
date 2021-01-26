@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include "control/layer/LayerCtrlListener.h"
 #include "gui/FloatingToolbox.h"
 #include "model/Font.h"
@@ -27,7 +29,6 @@ class ToolbarData;
 class ToolbarModel;
 class XournalView;
 class MainWindowToolbarMenu;
-
 
 class MainWindow: public GladeGui, public LayerCtrlListener {
 public:
@@ -47,10 +48,10 @@ public:
     void setRecentMenu(GtkWidget* submenu);
     void toolbarSelected(ToolbarData* d);
     ToolbarData* getSelectedToolbar();
-    void reloadToolbars();
+    [[maybe_unused]] void reloadToolbars();
 
     /**
-     * This methods are only used internally and for toolbar configuration
+     * These methods are only used internally and for toolbar configuration
      */
     ToolbarData* clearToolbar();
     void loadToolbar(ToolbarData* d);
@@ -102,7 +103,11 @@ public:
      * Disable kinetic scrolling if there is a touchscreen device that was manually mapped to another enabled input
      * device class. This is required so the GtkScrolledWindow does not swallow all the events.
      */
-    void setTouchscreenScrollingForDeviceMapping();
+    void setGtkTouchscreenScrollingForDeviceMapping();
+    void setGtkTouchscreenScrollingEnabled(bool enabled);
+    bool getGtkTouchscreenScrollingEnabled() const;
+
+    void rebindMenubarAccelerators();
 
 private:
     void initXournalWidget();
@@ -114,7 +119,10 @@ private:
     static void toggleMenuBar(MainWindow* win);
 
     void createToolbarAndMenu();
-
+    static void rebindAcceleratorsMenuItem(GtkWidget* widget, gpointer user_data);
+    static void rebindAcceleratorsSubMenu(GtkWidget* widget, gpointer user_data);
+    static gboolean isKeyForClosure(GtkAccelKey* key, GClosure* closure, gpointer data);
+    static gboolean invokeMenu(GtkWidget* widget);
 
     static void buttonCloseSidebarClicked(GtkButton* button, MainWindow* win);
 
@@ -161,6 +169,13 @@ private:
     GtkWidget* winXournal = nullptr;
     ScrollHandling* scrollHandling = nullptr;
 
+    // Note: `usingTouchWorkaround` is cached here because
+    // Settings::isTouchWorkorkaround reflects the current state
+    // of the setting -- usingTouchWorkaround should only change
+    // on application restart!
+    bool usingTouchWorkaround;
+    std::atomic_bool gtkTouchscreenScrollingEnabled{true};
+
     // Toolbars
     ToolMenuHandler* toolbar;
     ToolbarData* selectedToolbar = nullptr;
@@ -171,9 +186,5 @@ private:
     GtkWidget** toolbarWidgets;
 
     MainWindowToolbarMenu* toolbarSelectMenu;
-
-    /**
-     * Workaround for double hide menubar event
-     */
-    bool ignoreNextHideEvent;
+    GtkAccelGroup* globalAccelGroup;
 };

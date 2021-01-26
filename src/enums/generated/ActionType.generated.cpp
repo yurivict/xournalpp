@@ -5,11 +5,14 @@
 #include <string>
 
 #include "../ActionType.enum.h"
+
 using std::string;
 #include <glib.h>
 
 
 // ** This needs to be copied to the header
+ActionType ActionType_fromString(const string& value);
+string ActionType_toString(ActionType value);
 
 
 auto ActionType_fromString(const string& value) -> ActionType {
@@ -137,6 +140,10 @@ auto ActionType_fromString(const string& value) -> ActionType {
         return ACTION_NEW_PAGE_AT_END;
     }
 
+    if (value == "ACTION_APPEND_NEW_PDF_PAGES") {
+        return ACTION_APPEND_NEW_PDF_PAGES;
+    }
+
     if (value == "ACTION_CONFIGURE_PAGE_TEMPLATE") {
         return ACTION_CONFIGURE_PAGE_TEMPLATE;
     }
@@ -151,6 +158,10 @@ auto ActionType_fromString(const string& value) -> ActionType {
 
     if (value == "ACTION_DELETE_LAYER") {
         return ACTION_DELETE_LAYER;
+    }
+
+    if (value == "ACTION_RENAME_LAYER") {
+        return ACTION_RENAME_LAYER;
     }
 
     if (value == "ACTION_PAPER_FORMAT") {
@@ -169,8 +180,8 @@ auto ActionType_fromString(const string& value) -> ActionType {
         return ACTION_TOOL_ERASER;
     }
 
-    if (value == "ACTION_TOOL_HILIGHTER") {
-        return ACTION_TOOL_HILIGHTER;
+    if (value == "ACTION_TOOL_HIGHLIGHTER") {
+        return ACTION_TOOL_HIGHLIGHTER;
     }
 
     if (value == "ACTION_TOOL_TEXT") {
@@ -333,36 +344,36 @@ auto ActionType_fromString(const string& value) -> ActionType {
         return ACTION_TOOL_PEN_FILL;
     }
 
-    if (value == "ACTION_TOOL_PEN_FILL_TRANSPARENCY") {
-        return ACTION_TOOL_PEN_FILL_TRANSPARENCY;
+    if (value == "ACTION_TOOL_PEN_FILL_OPACITY") {
+        return ACTION_TOOL_PEN_FILL_OPACITY;
     }
 
-    if (value == "ACTION_TOOL_HILIGHTER_SIZE_VERY_FINE") {
-        return ACTION_TOOL_HILIGHTER_SIZE_VERY_FINE;
+    if (value == "ACTION_TOOL_HIGHLIGHTER_SIZE_VERY_FINE") {
+        return ACTION_TOOL_HIGHLIGHTER_SIZE_VERY_FINE;
     }
 
-    if (value == "ACTION_TOOL_HILIGHTER_SIZE_FINE") {
-        return ACTION_TOOL_HILIGHTER_SIZE_FINE;
+    if (value == "ACTION_TOOL_HIGHLIGHTER_SIZE_FINE") {
+        return ACTION_TOOL_HIGHLIGHTER_SIZE_FINE;
     }
 
-    if (value == "ACTION_TOOL_HILIGHTER_SIZE_MEDIUM") {
-        return ACTION_TOOL_HILIGHTER_SIZE_MEDIUM;
+    if (value == "ACTION_TOOL_HIGHLIGHTER_SIZE_MEDIUM") {
+        return ACTION_TOOL_HIGHLIGHTER_SIZE_MEDIUM;
     }
 
-    if (value == "ACTION_TOOL_HILIGHTER_SIZE_THICK") {
-        return ACTION_TOOL_HILIGHTER_SIZE_THICK;
+    if (value == "ACTION_TOOL_HIGHLIGHTER_SIZE_THICK") {
+        return ACTION_TOOL_HIGHLIGHTER_SIZE_THICK;
     }
 
-    if (value == "ACTION_TOOL_HILIGHTER_SIZE_VERY_THICK") {
-        return ACTION_TOOL_HILIGHTER_SIZE_VERY_THICK;
+    if (value == "ACTION_TOOL_HIGHLIGHTER_SIZE_VERY_THICK") {
+        return ACTION_TOOL_HIGHLIGHTER_SIZE_VERY_THICK;
     }
 
-    if (value == "ACTION_TOOL_HILIGHTER_FILL") {
-        return ACTION_TOOL_HILIGHTER_FILL;
+    if (value == "ACTION_TOOL_HIGHLIGHTER_FILL") {
+        return ACTION_TOOL_HIGHLIGHTER_FILL;
     }
 
-    if (value == "ACTION_TOOL_HILIGHTER_FILL_TRANSPARENCY") {
-        return ACTION_TOOL_HILIGHTER_FILL_TRANSPARENCY;
+    if (value == "ACTION_TOOL_HIGHLIGHTER_FILL_OPACITY") {
+        return ACTION_TOOL_HIGHLIGHTER_FILL_OPACITY;
     }
 
     if (value == "ACTION_TOOL_FILL") {
@@ -581,7 +592,7 @@ auto ActionType_fromString(const string& value) -> ActionType {
         return ACTION_NOT_SELECTED;
     }
 
-    g_error("Invalid enum value for ActionType: «%s»", value.c_str());
+    g_error("Invalid enum value for ActionType: \"%s\"", value.c_str());
     return ACTION_NONE;
 }
 
@@ -711,6 +722,10 @@ auto ActionType_toString(ActionType value) -> string {
         return "ACTION_NEW_PAGE_AT_END";
     }
 
+    if (value == ACTION_APPEND_NEW_PDF_PAGES) {
+        return "ACTION_APPEND_NEW_PDF_PAGES";
+    }
+
     if (value == ACTION_CONFIGURE_PAGE_TEMPLATE) {
         return "ACTION_CONFIGURE_PAGE_TEMPLATE";
     }
@@ -725,6 +740,10 @@ auto ActionType_toString(ActionType value) -> string {
 
     if (value == ACTION_DELETE_LAYER) {
         return "ACTION_DELETE_LAYER";
+    }
+
+    if (value == ACTION_RENAME_LAYER) {
+        return "ACTION_RENAME_LAYER";
     }
 
     if (value == ACTION_PAPER_FORMAT) {
@@ -743,8 +762,8 @@ auto ActionType_toString(ActionType value) -> string {
         return "ACTION_TOOL_ERASER";
     }
 
-    if (value == ACTION_TOOL_HILIGHTER) {
-        return "ACTION_TOOL_HILIGHTER";
+    if (value == ACTION_TOOL_HIGHLIGHTER) {
+        return "ACTION_TOOL_HIGHLIGHTER";
     }
 
     if (value == ACTION_TOOL_TEXT) {
@@ -907,36 +926,36 @@ auto ActionType_toString(ActionType value) -> string {
         return "ACTION_TOOL_PEN_FILL";
     }
 
-    if (value == ACTION_TOOL_PEN_FILL_TRANSPARENCY) {
-        return "ACTION_TOOL_PEN_FILL_TRANSPARENCY";
+    if (value == ACTION_TOOL_PEN_FILL_OPACITY) {
+        return "ACTION_TOOL_PEN_FILL_OPACITY";
     }
 
-    if (value == ACTION_TOOL_HILIGHTER_SIZE_VERY_FINE) {
-        return "ACTION_TOOL_HILIGHTER_SIZE_VERY_FINE";
+    if (value == ACTION_TOOL_HIGHLIGHTER_SIZE_VERY_FINE) {
+        return "ACTION_TOOL_HIGHLIGHTER_SIZE_VERY_FINE";
     }
 
-    if (value == ACTION_TOOL_HILIGHTER_SIZE_FINE) {
-        return "ACTION_TOOL_HILIGHTER_SIZE_FINE";
+    if (value == ACTION_TOOL_HIGHLIGHTER_SIZE_FINE) {
+        return "ACTION_TOOL_HIGHLIGHTER_SIZE_FINE";
     }
 
-    if (value == ACTION_TOOL_HILIGHTER_SIZE_MEDIUM) {
-        return "ACTION_TOOL_HILIGHTER_SIZE_MEDIUM";
+    if (value == ACTION_TOOL_HIGHLIGHTER_SIZE_MEDIUM) {
+        return "ACTION_TOOL_HIGHLIGHTER_SIZE_MEDIUM";
     }
 
-    if (value == ACTION_TOOL_HILIGHTER_SIZE_THICK) {
-        return "ACTION_TOOL_HILIGHTER_SIZE_THICK";
+    if (value == ACTION_TOOL_HIGHLIGHTER_SIZE_THICK) {
+        return "ACTION_TOOL_HIGHLIGHTER_SIZE_THICK";
     }
 
-    if (value == ACTION_TOOL_HILIGHTER_SIZE_VERY_THICK) {
-        return "ACTION_TOOL_HILIGHTER_SIZE_VERY_THICK";
+    if (value == ACTION_TOOL_HIGHLIGHTER_SIZE_VERY_THICK) {
+        return "ACTION_TOOL_HIGHLIGHTER_SIZE_VERY_THICK";
     }
 
-    if (value == ACTION_TOOL_HILIGHTER_FILL) {
-        return "ACTION_TOOL_HILIGHTER_FILL";
+    if (value == ACTION_TOOL_HIGHLIGHTER_FILL) {
+        return "ACTION_TOOL_HIGHLIGHTER_FILL";
     }
 
-    if (value == ACTION_TOOL_HILIGHTER_FILL_TRANSPARENCY) {
-        return "ACTION_TOOL_HILIGHTER_FILL_TRANSPARENCY";
+    if (value == ACTION_TOOL_HIGHLIGHTER_FILL_OPACITY) {
+        return "ACTION_TOOL_HIGHLIGHTER_FILL_OPACITY";
     }
 
     if (value == ACTION_TOOL_FILL) {

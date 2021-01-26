@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+#include "control/jobs/BaseExportJob.h"
+
 #include "PageRange.h"
 #include "XournalType.h"
 #include "filesystem.h"
@@ -24,14 +26,14 @@ public:
     virtual ~XojPdfExport();
 
 public:
-    virtual bool createPdf(fs::path const& file) = 0;
-    virtual bool createPdf(fs::path const& file, PageRangeVector& range) = 0;
+    virtual bool createPdf(fs::path const& file, bool progressiveMode) = 0;
+    virtual bool createPdf(fs::path const& file, PageRangeVector& range, bool progressiveMode) = 0;
     virtual string getLastError() = 0;
 
     /**
      * Export without background
      */
-    virtual void setNoBackgroundExport(bool noBackgroundExport);
+    virtual void setExportBackground(ExportBackgroundType exportBackground);
 
 private:
 };

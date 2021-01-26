@@ -57,8 +57,6 @@ public:
 
     /** @return The version of the loaded file */
     int getFileVersion() const;
-    /** @return The minimum version of the loaded file */
-    int getFileMinVersion() const;
 
 private:
     void parseStart();
@@ -101,7 +99,7 @@ private:
     void readTexImage(const gchar* base64string, gsize base64stringLen);
 
 private:
-    static string parseBase64(const gchar* base64, gsize lenght);
+    static string parseBase64(const gchar* base64, gsize length);
     bool readZipAttachment(fs::path const& filename, gpointer& data, gsize& length);
     fs::path getTempFileForPath(fs::path const& filename);
 

@@ -60,7 +60,7 @@ Xournal++ features:
 - Rect snapping to grid
 - Audio recording and playback alongside with handwritten notes
 - Multi Language Support, Like English, German (Deutsch), Italian (Italiano)...
-- Plugins using LUA Scripting
+- Plugins using Lua scripting
 
 ## Mobile & web app
 
@@ -163,7 +163,7 @@ only compatible with the _specific version of Debian or Ubuntu_ indicated by the
 file name. For example, if you are on Ubuntu 20.04, the binary whose name
 contains `Ubuntu-xenial` is _only_ compatible with Ubuntu 18.04. If your system
 is not one of the specific Debian or Ubuntu versions that are supported by the
-official binaries, we recommend you use either the PPA, the Flatpak, or the
+official binaries, we recommend you use either the PPA (Ubuntu only), the Flatpak, or the
 AppImage.
 
 There is also an _unstable_, [automated nightly
@@ -173,8 +173,24 @@ includes the very latest features and bug fixes.
 With the help of the community, Xournal++ is also available on official repositories
 of some popular Linux distros and platforms.
 
+### Debian
+
+There are [Stable releases](https://github.com/xournalpp/xournalpp/releases) and
+_unstable_ [automated nightly releases](https://github.com/xournalpp/xournalpp/releases/tag/nightly)
+for Debian.
+
 ### Ubuntu and derivatives
 
+#### Stable PPA
+The latest stable version is available via the following [_unofficial_ PPA](https://github.com/xournalpp/xournalpp/issues/1013#issuecomment-692656810):
+
+```bash
+sudo add-apt-repository ppa:apandada1/xournalpp-stable
+sudo apt update
+sudo apt install xournalpp
+```
+
+#### Unstable PPA
 An _unstable_, nightly release is available for Ubuntu-based distributions via the following PPA:
 
 ```bash
@@ -186,9 +202,6 @@ sudo apt install xournalpp
 This PPA is provided by the Xournal++ team. While it has the latest features and
 bug fixes, it has also not been tested thoroughly and may break periodically (we
 try our best not to break things, though).
-
-We eventually also planning on setting up a PPA for stable releases
-([#1013](https://github.com/xournalpp/xournalpp/issues/1013)).
 
 ### Fedora
 
@@ -228,8 +241,8 @@ master on a weekly basis are available from
 
 ### Arch Linux
 
-The latest stable release is available [in the [extra]
-repository](https://www.archlinux.org/packages/?q=xournalpp).
+The latest stable release is available [in the [community]
+repository](https://www.archlinux.org/packages/community/x86_64/xournalpp/).
 
 To build the latest state of the master branch yourself, use [this AUR
 package](https://aur.archlinux.org/packages/xournalpp-git/).
@@ -322,7 +335,7 @@ The file format _.xopp is an XML which is .gz compressed. PDFs are not embedded 
 
 All new files will be saved as _.xopp, if an _.xoj file is opened which was created by Xournal, the Save-As dialog will be displayed on save. If the \*.xoj file was by Xournal++ created, Xournal++ overwrite the file on save, and does not change the extension.
 
-**We are currently introducing a new file format that can efficiently store attached PDF files and other attachments internally. We will still allow for attachments that are linked to external files. Please refer to [#937](https://github.com/xournalpp/xournalpp/issues/937) for futher details.**
+**We are currently introducing a new file format that can efficiently store attached PDF files and other attachments internally. We will still allow for attachments that are linked to external files. Please refer to [#937](https://github.com/xournalpp/xournalpp/issues/937) for further details.**
 
 ## Development
 

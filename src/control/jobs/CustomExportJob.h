@@ -44,7 +44,7 @@ protected:
      */
     void exportGraphics();
 
-    virtual bool isUriValid(string& uri);
+    bool testAndSetFilepath(fs::path file) override;
 
 private:
     /**
@@ -53,9 +53,9 @@ private:
     PageRangeVector exportRange;
 
     /**
-     * PNG dpi
+     * @brief Quality parameter for PNG exports
      */
-    int pngDpi = 300;
+    RasterImageQualityParameter pngQualityParameter = RasterImageQualityParameter();
 
     /**
      * Export graphics format
@@ -66,6 +66,16 @@ private:
      * XOJ Export, else PNG Export
      */
     bool exportTypeXoj = false;
+
+    /**
+     * Background export type
+     */
+    ExportBackgroundType exportBackground = EXPORT_BACKGROUND_ALL;
+
+    /**
+     * Export all Layers progressively
+     */
+    bool progressiveMode = false;
 
     string lastError;
 

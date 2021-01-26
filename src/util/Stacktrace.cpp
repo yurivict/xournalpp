@@ -68,7 +68,7 @@ fs::path Stacktrace::getExePath() {
 auto Stacktrace::getExePath() -> fs::path {
     std::array<char, PATH_MAX> result{};
     ssize_t count = readlink("/proc/self/exe", result.data(), PATH_MAX);
-    return fs::path{std::string(result.data(), (count > 0) ? count : 0)};
+    return fs::path{std::string(result.data(), std::max(ssize_t{0}, count))};
 }
 #endif
 
@@ -87,7 +87,7 @@ void Stacktrace::printStracktrace(std::ostream& stream) {
 
         std::array<char, 1024> syscom{};
 
-        sprintf(syscom.data(), "addr2line %p -e %s", trace[i], exeName.c_str());
+        snprintf(syscom.data(), syscom.size(), "addr2line %p -e %s", trace[i], exeName.c_str());
         FILE* fProc = popen(syscom.data(), "r");
         while (fgets(buff.data(), buff.size(), fProc) != nullptr) {
             stream << buff.data();

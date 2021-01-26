@@ -1,5 +1,7 @@
 #include "SaveHandler.h"
 
+#include <cinttypes>
+
 #include <config.h>
 
 #include "control/jobs/ProgressListener.h"
@@ -83,9 +85,9 @@ void SaveHandler::writeHeader() {
 }
 
 auto SaveHandler::getColorStr(Color c, unsigned char alpha) -> string {
-    char* str = g_strdup_printf("#%08x", uint32_t(c) << 8U | alpha);
-    string color = str;
-    g_free(str);
+    char str[10];
+    sprintf(str, "#%08" PRIx32, uint32_t(c) << 8U | alpha);
+    string color(str);
     return color;
 }
 
@@ -153,6 +155,10 @@ void SaveHandler::visitStrokeExtended(XmlPointNode* stroke, Stroke* s) {
 void SaveHandler::visitLayer(XmlNode* page, Layer* l) {
     auto* layer = new XmlNode("layer");
     page->addChild(layer);
+    if (l->hasName()) {
+        layer->setAttrib("name", l->getName().c_str());
+    }
+
     for (Element* e: *l->getElements()) {
         if (e->getType() == ELEMENT_STROKE) {
             auto* s = dynamic_cast<Stroke*>(e);
@@ -207,6 +213,8 @@ void SaveHandler::visitPage(XmlNode* root, PageRef p, Document* doc, int id) {
     auto* background = new XmlNode("background");
     page->addChild(background);
 
+    writeBackgroundName(background, p);
+
     if (p->getBackgroundType().isPdfPage()) {
         /**
          * ATTENTION! The original xournal can only read the XML if the attributes are in the right order!
@@ -232,7 +240,7 @@ void SaveHandler::visitPage(XmlNode* root, PageRef p, Document* doc, int id) {
                         this->errorMessage += "\n";
                     }
                     this->errorMessage +=
-                            FS(_F("Could not write background \"{1}\", {2}") % filepath.string() % error->message);
+                            FS(_F("Could not write background \"{1}\", {2}") % filepath.u8string() % error->message);
 
                     g_error_free(error);
                 }
@@ -296,6 +304,12 @@ void SaveHandler::writeSolidBackground(XmlNode* background, PageRef p) {
     }
 }
 
+void SaveHandler::writeBackgroundName(XmlNode* background, PageRef p) {
+    if (p->backgroundHasName()) {
+        background->setAttrib("name", p->getBackgroundName());
+    }
+}
+
 void SaveHandler::saveTo(const fs::path& filepath, ProgressListener* listener) {
     GzOutputStream out(filepath);
 
@@ -328,7 +342,7 @@ void SaveHandler::saveTo(OutputStream* out, const fs::path& filepath, ProgressLi
                 this->errorMessage += "\n";
             }
 
-            this->errorMessage += FS(_F("Could not write background \"{1}\". Continuing anyway.") % tmpfn.string());
+            this->errorMessage += FS(_F("Could not write background \"{1}\". Continuing anyway.") % tmpfn.u8string());
         }
     }
 }

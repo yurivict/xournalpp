@@ -21,14 +21,29 @@ SettingsDialog::SettingsDialog(GladeSearchpath* gladeSearchPath, Settings* setti
     GtkWidget* vbox = get("zoomVBox");
     g_return_if_fail(vbox != nullptr);
 
-    GtkWidget* slider = get("zoomCallibSlider");
-    g_return_if_fail(slider != nullptr);
-
-    g_signal_connect(slider, "change-value",
+    GtkWidget* zoomCalibSlider = get("zoomCallibSlider");
+    g_return_if_fail(zoomCalibSlider != nullptr);
+    g_signal_connect(zoomCalibSlider, "change-value",
                      G_CALLBACK(+[](GtkRange* range, GtkScrollType scroll, gdouble value, SettingsDialog* self) {
                          self->setDpi((int)value);
                      }),
                      this);
+
+    g_signal_connect(get("cbNewInputSystem"), "toggled", G_CALLBACK(+[](GtkComboBox* comboBox, SettingsDialog* self) {
+                         self->updateTouchDrawingOptions();
+                         self->updatePressureSensitivityOptions();
+                     }),
+                     this);
+
+    g_signal_connect(
+            get("cbEnablePressureInference"), "toggled",
+            G_CALLBACK(+[](GtkComboBox* comboBox, SettingsDialog* self) { self->updatePressureSensitivityOptions(); }),
+            this);
+
+    g_signal_connect(
+            get("cbSettingPresureSensitivity"), "toggled",
+            G_CALLBACK(+[](GtkComboBox* comboBox, SettingsDialog* self) { self->updatePressureSensitivityOptions(); }),
+            this);
 
     g_signal_connect(get("cbAutosave"), "toggled", G_CALLBACK(+[](GtkToggleButton* togglebutton, SettingsDialog* self) {
                          self->enableWithCheckbox("cbAutosave", "boxAutosave");
@@ -91,6 +106,16 @@ SettingsDialog::SettingsDialog(GladeSearchpath* gladeSearchPath, Settings* setti
             G_CALLBACK(+[](GtkComboBox* comboBox, SettingsDialog* self) { self->customHandRecognitionToggled(); }),
             this);
 
+    g_signal_connect(get("cbEnableZoomGestures"), "toggled",
+                     G_CALLBACK(+[](GtkComboBox* comboBox, SettingsDialog* self) {
+                         self->enableWithCheckbox("cbEnableZoomGestures", "gdStartZoomAtSetting");
+                     }),
+                     this);
+
+    g_signal_connect(
+            get("cbTouchWorkaround"), "toggled",
+            G_CALLBACK(+[](GtkComboBox* comboBox, SettingsDialog* self) { self->updateTouchDrawingOptions(); }), this);
+
     g_signal_connect(get("cbStylusCursorType"), "changed", G_CALLBACK(+[](GtkComboBox* comboBox, SettingsDialog* self) {
                          self->customStylusIconTypeChanged();
                      }),
@@ -99,6 +124,7 @@ SettingsDialog::SettingsDialog(GladeSearchpath* gladeSearchPath, Settings* setti
     gtk_box_pack_start(GTK_BOX(vbox), callib, false, true, 0);
     gtk_widget_show(callib);
 
+    initLanguageSettings();
     initMouseButtonEvents();
 
     vector<InputDevice> deviceList = DeviceListHelper::getDeviceList(this->settings);
@@ -134,17 +160,21 @@ SettingsDialog::~SettingsDialog() {
     this->settings = nullptr;
 }
 
+void SettingsDialog::initLanguageSettings() {
+    languageConfig = std::make_unique<LanguageConfigGui>(getGladeSearchPath(), get("hboxLanguageSelect"), settings);
+}
+
 void SettingsDialog::initMouseButtonEvents(const char* hbox, int button, bool withDevice) {
     this->buttonConfigs.push_back(new ButtonConfigGui(getGladeSearchPath(), get(hbox), settings, button, withDevice));
 }
 
 void SettingsDialog::initMouseButtonEvents() {
-    initMouseButtonEvents("hboxMidleMouse", BUTTON_MIDDLE);
-    initMouseButtonEvents("hboxRightMouse", BUTTON_RIGHT);
+    initMouseButtonEvents("hboxMidleMouse", BUTTON_MOUSE_MIDDLE);
+    initMouseButtonEvents("hboxRightMouse", BUTTON_MOUSE_RIGHT);
     initMouseButtonEvents("hboxEraser", BUTTON_ERASER);
     initMouseButtonEvents("hboxTouch", BUTTON_TOUCH, true);
-    initMouseButtonEvents("hboxPenButton1", BUTTON_STYLUS);
-    initMouseButtonEvents("hboxPenButton2", BUTTON_STYLUS2);
+    initMouseButtonEvents("hboxPenButton1", BUTTON_STYLUS_ONE);
+    initMouseButtonEvents("hboxPenButton2", BUTTON_STYLUS_TWO);
 
     initMouseButtonEvents("hboxDefaultTool", BUTTON_DEFAULT);
 }
@@ -160,6 +190,33 @@ void SettingsDialog::setDpi(int dpi) {
 
 void SettingsDialog::show(GtkWindow* parent) {
     load();
+
+    // detect display size. If large enough, we enlarge the Settings
+    // Window up to 1000x740.
+    GdkDisplay* disp = gdk_display_get_default();
+    if (disp != NULL) {
+        GdkWindow* win = gtk_widget_get_window(GTK_WIDGET(parent));
+        if (win != NULL) {
+            GdkMonitor* moni = gdk_display_get_monitor_at_window(disp, win);
+            GdkRectangle workarea;
+            gdk_monitor_get_workarea(moni, &workarea);
+            gint w = -1;
+            gint h = -1;
+            if (workarea.width > 1100) {
+                w = 1000;
+            } else if (workarea.width > 920) {
+                w = 900;
+            }
+            if (workarea.height > 800) {
+                h = 740;
+            } else if (workarea.height > 620) {
+                h = 600;
+            }
+            gtk_window_set_default_size(GTK_WINDOW(this->window), w, h);
+        } else {
+            g_message("Parent window does not have a GDK Window. This is unexpected.");
+        }
+    }
 
     gtk_window_set_transient_for(GTK_WINDOW(this->window), parent);
     int res = gtk_dialog_run(GTK_DIALOG(this->window));
@@ -181,13 +238,84 @@ auto SettingsDialog::getCheckbox(const char* name) -> bool {
     return gtk_toggle_button_get_active(b);
 }
 
+void SettingsDialog::loadSlider(const char* name, double value) {
+    GtkRange* range = GTK_RANGE(get(name));
+    gtk_range_set_value(range, value);
+}
+
+auto SettingsDialog::getSlider(const char* name) -> double {
+    GtkRange* range = GTK_RANGE(get(name));
+    return gtk_range_get_value(range);
+}
+
 /**
- * Autosave was toggled, enable / disable autosave config
+ * Checkbox was toggled, enable / disable it
  */
-void SettingsDialog::enableWithCheckbox(const string& checkbox, const string& widget) {
-    GtkWidget* cbAutosave = get(checkbox);
-    bool autosaveEnabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(cbAutosave));
-    gtk_widget_set_sensitive(get(widget), autosaveEnabled);
+void SettingsDialog::enableWithCheckbox(const string& checkboxId, const string& widgetId) {
+    GtkWidget* checkboxWidget = get(checkboxId);
+    bool enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(checkboxWidget));
+    gtk_widget_set_sensitive(get(widgetId), enabled);
+}
+
+void SettingsDialog::disableWithCheckbox(const string& checkboxId, const string& widgetId) {
+    GtkWidget* checkboxWidget = get(checkboxId);
+    bool enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(checkboxWidget));
+    gtk_widget_set_sensitive(get(widgetId), !enabled);
+}
+
+/**
+ * Listeners specific to portions of the settings pane.
+ */
+
+void SettingsDialog::updateTouchDrawingOptions() {
+    GtkWidget* touchDrawingCheckbox = get("cbTouchDrawing");
+
+    if (getCheckbox("cbTouchWorkaround")) {
+        gtk_widget_set_sensitive(touchDrawingCheckbox, false);
+
+        gtk_widget_set_tooltip_text(touchDrawingCheckbox,
+                                    _("The touch workaround must be disabled to change this setting. "));
+
+        loadCheckbox("cbTouchDrawing", true);
+    } else {
+        gtk_widget_set_tooltip_text(touchDrawingCheckbox,
+                                    _("Use two fingers to pan/zoom and one finger to use the selected tool."));
+    }
+
+
+    if (!getCheckbox("cbNewInputSystem")) {
+        gtk_widget_set_tooltip_text(touchDrawingCheckbox,
+                                    _("Without the new input system, two-finger gestures will not zoom/pan while "
+                                      "drawing. Enable the new input system and disable the touch workaround to"
+                                      " change this setting."));
+        loadCheckbox("cbTouchDrawing", getCheckbox("cbTouchWorkaround"));
+        gtk_widget_set_sensitive(touchDrawingCheckbox, false);
+    } else {
+        disableWithCheckbox("cbTouchWorkaround", "cbTouchDrawing");
+    }
+}
+
+void SettingsDialog::updatePressureSensitivityOptions() {
+    GtkWidget* sensitivityOptionsFrame = get("framePressureSensitivityScale");
+    bool haveNewInputSystem = getCheckbox("cbNewInputSystem");
+    bool havePressureInput = getCheckbox("cbSettingPresureSensitivity") || getCheckbox("cbEnablePressureInference");
+
+    if (!havePressureInput) {
+        gtk_widget_set_tooltip_text(sensitivityOptionsFrame,
+                                    _("Enable pressure sensitivity or pressure inference to change this setting!"));
+    } else {
+    }
+
+    if (!haveNewInputSystem) {
+        gtk_widget_set_tooltip_text(sensitivityOptionsFrame,
+                                    _("The new input system must be enabled to change this setting. "));
+        gtk_widget_set_sensitive(sensitivityOptionsFrame, false);
+    } else {
+        gtk_widget_set_tooltip_text(sensitivityOptionsFrame,
+                                    _("Filter input pressure. Multiply the pressure by the pressure multiplier."
+                                      " If less than the minimum, use the minimum pressure."));
+        gtk_widget_set_sensitive(sensitivityOptionsFrame, havePressureInput);
+    }
 }
 
 void SettingsDialog::customHandRecognitionToggled() {
@@ -222,7 +350,9 @@ void SettingsDialog::load() {
     loadCheckbox("cbHideHorizontalScrollbar", settings->getScrollbarHideType() & SCROLLBAR_HIDE_HORIZONTAL);
     loadCheckbox("cbHideVerticalScrollbar", settings->getScrollbarHideType() & SCROLLBAR_HIDE_VERTICAL);
     loadCheckbox("cbDisableScrollbarFadeout", settings->isScrollbarFadeoutDisabled());
+    loadCheckbox("cbEnablePressureInference", settings->isPressureGuessingEnabled());
     loadCheckbox("cbTouchWorkaround", settings->isTouchWorkaround());
+    loadCheckbox("cbTouchDrawing", settings->getTouchDrawingEnabled());
     const bool ignoreStylusEventsEnabled = settings->getIgnoredStylusEvents() != 0;  // 0 means disabled, >0 enabled
     loadCheckbox("cbIgnoreFirstStylusEvents", ignoreStylusEventsEnabled);
     loadCheckbox("cbNewInputSystem", settings->getExperimentalInputSystemEnabled());
@@ -273,6 +403,12 @@ void SettingsDialog::load() {
     GtkWidget* spDrawDirModsRadius = get("spDrawDirModsRadius");
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(spDrawDirModsRadius), settings->getDrawDirModsRadius());
 
+    GtkWidget* spReRenderThreshold = get("spReRenderThreshold");
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(spReRenderThreshold), settings->getPDFPageRerenderThreshold());
+
+    GtkWidget* spTouchZoomStartThreshold = get("spTouchZoomStartThreshold");
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(spTouchZoomStartThreshold), settings->getTouchZoomStartThreshold());
+
     {
         int time = 0;
         double length = 0;
@@ -287,10 +423,10 @@ void SettingsDialog::load() {
         gtk_spin_button_set_value(GTK_SPIN_BUTTON(spStrokeSuccessiveTime), successive);
     }
 
-    GtkWidget* slider = get("zoomCallibSlider");
-
     this->setDpi(settings->getDisplayDpi());
-    gtk_range_set_value(GTK_RANGE(slider), dpi);
+    loadSlider("zoomCallibSlider", dpi);
+    loadSlider("scaleMinimumPressure", settings->getMinimumPressure());
+    loadSlider("scalePressureMultiplier", settings->getPressureMultiplier());
 
     GdkRGBA color = Util::rgb_to_GdkRGBA(settings->getBorderColor());
     gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(get("colorBorder")), &color);
@@ -351,6 +487,12 @@ void SettingsDialog::load() {
     loadCheckbox("cbHidePresentationSidebar", hidePresentationSidebar);
     loadCheckbox("cbHideMenubarStartup", settings->isMenubarVisible());
 
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(get("preloadPagesBefore")),
+                              static_cast<double>(settings->getPreloadPagesBefore()));
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(get("preloadPagesAfter")),
+                              static_cast<double>(settings->getPreloadPagesAfter()));
+    loadCheckbox("cbEagerPageCleanup", settings->isEagerPageCleanup());
+
     enableWithCheckbox("cbAutosave", "boxAutosave");
     enableWithCheckbox("cbIgnoreFirstStylusEvents", "spNumIgnoredStylusEvents");
     enableWithCheckbox("cbAddVerticalSpace", "spAddVerticalSpace");
@@ -361,9 +503,12 @@ void SettingsDialog::load() {
     enableWithCheckbox("cbStrokeFilterEnabled", "spStrokeSuccessiveTime");
     enableWithCheckbox("cbStrokeFilterEnabled", "cbDoActionOnStrokeFiltered");
     enableWithCheckbox("cbStrokeFilterEnabled", "cbTrySelectOnStrokeFiltered");
+    enableWithCheckbox("cbEnableZoomGestures", "gdStartZoomAtSetting");
     enableWithCheckbox("cbDisableTouchOnPenNear", "boxInternalHandRecognition");
     customHandRecognitionToggled();
     customStylusIconTypeChanged();
+    updateTouchDrawingOptions();
+    updatePressureSensitivityOptions();
 
 
     SElement& touch = settings->getCustomElement("touch");
@@ -487,6 +632,8 @@ void SettingsDialog::save() {
     settings->transactionStart();
 
     settings->setPressureSensitivity(getCheckbox("cbSettingPresureSensitivity"));
+    settings->setMinimumPressure(getSlider("scaleMinimumPressure"));
+    settings->setPressureMultiplier(getSlider("scalePressureMultiplier"));
     settings->setZoomGesturesEnabled(getCheckbox("cbEnableZoomGestures"));
     settings->setSidebarOnRight(getCheckbox("cbShowSidebarRight"));
     settings->setScrollbarOnLeft(getCheckbox("cbShowScrollbarLeft"));
@@ -501,7 +648,9 @@ void SettingsDialog::save() {
     settings->setSnapRecognizedShapesEnabled(getCheckbox("cbSnapRecognizedShapesEnabled"));
     settings->setRestoreLineWidthEnabled(getCheckbox("cbRestoreLineWidthEnabled"));
     settings->setDarkTheme(getCheckbox("cbDarkTheme"));
+    settings->setPressureGuessingEnabled(getCheckbox("cbEnablePressureInference"));
     settings->setTouchWorkaround(getCheckbox("cbTouchWorkaround"));
+    settings->setTouchDrawingEnabled(getCheckbox("cbTouchDrawing"));
     settings->setExperimentalInputSystemEnabled(getCheckbox("cbNewInputSystem"));
     settings->setInputSystemTPCButtonEnabled(getCheckbox("cbInputSystemTPCButton"));
     settings->setInputSystemDrawOutsideWindowEnabled(getCheckbox("cbInputSystemDrawOutsideWindow"));
@@ -563,8 +712,18 @@ void SettingsDialog::save() {
 
     settings->setMenubarVisible(getCheckbox("cbHideMenubarStartup"));
 
+    constexpr auto spinAsUint = [&](GtkSpinButton* btn) {
+        int v = gtk_spin_button_get_value_as_int(btn);
+        return v < 0 ? 0U : static_cast<unsigned int>(v);
+    };
+    unsigned int preloadPagesBefore = spinAsUint(GTK_SPIN_BUTTON(get("preloadPagesBefore")));
+    unsigned int preloadPagesAfter = spinAsUint(GTK_SPIN_BUTTON(get("preloadPagesAfter")));
+    settings->setPreloadPagesAfter(preloadPagesAfter);
+    settings->setPreloadPagesBefore(preloadPagesBefore);
+    settings->setEagerPageCleanup(getCheckbox("cbEagerPageCleanup"));
+
     settings->setDefaultSaveName(gtk_entry_get_text(GTK_ENTRY(get("txtDefaultSaveName"))));
-    // Todo(fabian): use Util::fromGtkFilename!
+    // Todo(fabian): use Util::fromGFilename!
     char* uri = gtk_file_chooser_get_uri(GTK_FILE_CHOOSER(get("fcAudioPath")));
     if (uri != nullptr) {
         settings->setAudioFolder(uri);
@@ -616,12 +775,22 @@ void SettingsDialog::save() {
     int strokeSuccessiveTime = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spStrokeSuccessiveTime));
     settings->setStrokeFilter(strokeIgnoreTime, strokeIgnoreLength, strokeSuccessiveTime);
 
+    GtkWidget* spTouchZoomStartThreshold = get("spTouchZoomStartThreshold");
+    double zoomStartThreshold = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spTouchZoomStartThreshold));
+    settings->setTouchZoomStartThreshold(zoomStartThreshold);
+
+    GtkWidget* spReRenderThreshold = get("spReRenderThreshold");
+    double rerenderThreshold = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spReRenderThreshold));
+    settings->setPDFPageRerenderThreshold(rerenderThreshold);
+
 
     settings->setDisplayDpi(dpi);
 
     for (ButtonConfigGui* bcg: this->buttonConfigs) {
         bcg->saveSettings();
     }
+
+    languageConfig->saveSettings();
 
     SElement& touch = settings->getCustomElement("touch");
     touch.setBool("disableTouch", getCheckbox("cbDisableTouchOnPenNear"));
@@ -691,5 +860,6 @@ void SettingsDialog::save() {
 
     settings->transactionEnd();
 
-    this->control->getWindow()->setTouchscreenScrollingForDeviceMapping();
+    this->control->getWindow()->setGtkTouchscreenScrollingForDeviceMapping();
+    this->control->initButtonTool();
 }

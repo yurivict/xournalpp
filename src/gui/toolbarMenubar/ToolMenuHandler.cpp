@@ -103,6 +103,9 @@ void ToolMenuHandler::load(ToolbarData* d, GtkWidget* toolbar, const char* toolb
                     name = "AUDIO_RECORDING";
                 }
 
+                // recognize previous name, V1.0.19 (Dec 2020) and earlier
+                if (name == "HILIGHTER")
+                    name = "HIGHLIGHTER";
 
                 if (name == "SEPARATOR") {
                     GtkToolItem* it = gtk_separator_tool_item_new();
@@ -270,7 +273,7 @@ void ToolMenuHandler::signalConnectCallback(GtkBuilder* builder, GObject* object
     ActionType action = ActionType_fromString(actionName);
 
     if (action == ACTION_NONE) {
-        g_error("Unknown action name from glade file: «%s» / «%s»", signalName, handlerName);
+        g_error("Unknown action name from glade file: \"%s\" / \"%s\"", signalName, handlerName);
         return;
     }
 
@@ -290,7 +293,7 @@ void ToolMenuHandler::signalConnectCallback(GtkBuilder* builder, GObject* object
         // There is no toolbar item -> register the menu only
         self->registerMenupoint(GTK_WIDGET(object), action, group);
     } else {
-        g_error("Unsupported signal handler from glade file: «%s» / «%s»", signalName, handlerName);
+        g_error("Unsupported signal handler from glade file: \"%s\" / \"%s\"", signalName, handlerName);
     }
 }
 
@@ -388,13 +391,14 @@ void ToolMenuHandler::initToolItems() {
     gtk_menu_item_set_submenu(GTK_MENU_ITEM(gui->get("menuJournalPaperBackground")),
                               pageBackgroundChangeController->getMenu());
 
+    ADD_STOCK_ITEM("CHANGE_LAYER_NAME", ACTION_RENAME_LAYER, "changeLayer", _("Change current layer name"));
     // Menu Tool
     // ************************************************************************
 
     initPenToolItem();
     initEraserToolItem();
 
-    ADD_CUSTOM_ITEM_TGL("HILIGHTER", ACTION_TOOL_HILIGHTER, GROUP_TOOL, true, "tool_highlighter", _("Highlighter"));
+    ADD_CUSTOM_ITEM_TGL("HIGHLIGHTER", ACTION_TOOL_HIGHLIGHTER, GROUP_TOOL, true, "tool_highlighter", _("Highlighter"));
 
     ADD_CUSTOM_ITEM_TGL("TEXT", ACTION_TOOL_TEXT, GROUP_TOOL, true, "tool_text", _("Text"));
     ADD_CUSTOM_ITEM("MATH_TEX", ACTION_TEX, "tool_math_tex", _("Add/Edit Tex"));

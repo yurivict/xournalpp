@@ -19,6 +19,7 @@
 #include "model/Element.h"
 #include "model/Font.h"
 #include "model/PageRef.h"
+#include "undo/UndoAction.h"
 #include "view/ElementContainer.h"
 
 #include "CursorSelectionType.h"
@@ -29,7 +30,6 @@ class Layer;
 class XojPageView;
 class Selection;
 class Element;
-class UndoAction;
 class EditSelectionContents;
 class DeleteUndoAction;
 
@@ -41,10 +41,16 @@ public:
 
 public:
     /**
+     * Sets the line style for all strokes, returs an undo action
+     * (or nullptr if nothing is done)
+     */
+    UndoActionPtr setLineStyle(LineStyle style);
+
+    /**
      * Sets the tool size for pen or eraser, returs an undo action
      * (or nullptr if nothing is done)
      */
-    UndoAction* setSize(ToolSize size, const double* thicknessPen, const double* thicknessHilighter,
+    UndoAction* setSize(ToolSize size, const double* thicknessPen, const double* thicknessHighlighter,
                         const double* thicknessEraser);
 
     /**
@@ -80,9 +86,19 @@ public:
     void addElement(Element* e, Layer::ElementIndex order);
 
     /**
-     * Returns all containig elements of this selections
+     * Returns all containing elements of this selection
      */
     vector<Element*>* getElements();
+
+    /**
+     * Returns the insert order of this selection
+     */
+    std::deque<std::pair<Element*, Layer::ElementIndex>> const& getInsertOrder() const;
+
+    /** replaces all elements by a new vector of elements
+     * @param newElements: the elements which should replace the old elements
+     * */
+    void replaceInsertOrder(std::deque<std::pair<Element*, Layer::ElementIndex>> newInsertOrder);
 
 public:
     /**
@@ -128,17 +144,6 @@ public:
      * Gets the original Y of the contents
      */
     double getOriginalY() const;
-
-
-    /**
-     * Gets the original width of the contents
-     */
-    double getOriginalWidth() const;
-
-    /**
-     * Gets the original height of the contents
-     */
-    double getOriginalHeight() const;
 
     UndoAction* copySelection(PageRef page, XojPageView* view, double x, double y);
 

@@ -4,11 +4,20 @@
 #include <fstream>
 
 #include <glib.h>
+#include <stdlib.h>
 
 #include "StringUtils.h"
 #include "Util.h"
 #include "XojMsgBox.h"
 #include "i18n.h"
+
+#ifdef GHC_FILESYSTEM
+// Fix of ghc::filesystem bug (path::operator/=() won't support string_views)
+constexpr auto const* CONFIG_FOLDER_NAME = "xournalpp";
+#else
+using namespace std::string_view_literals;
+constexpr auto CONFIG_FOLDER_NAME = "xournalpp"sv;
+#endif
 
 /**
  * Read a file to a string
@@ -36,7 +45,6 @@ auto Util::readString(fs::path const& path, bool showErrorToUser) -> std::option
 auto Util::getEscapedPath(const fs::path& path) -> string {
     string escaped = path.string();
     StringUtils::replaceAllChars(escaped, {replace_pair('\\', "\\\\"), replace_pair('\"', "\\\"")});
-
     return escaped;
 }
 
@@ -123,7 +131,7 @@ void Util::openFileWithDefaultApplication(const fs::path& filename) {
     if (system(command.c_str()) != 0) {
         string msg = FS(_F("File couldn't be opened. You have to do it manually:\n"
                            "URL: {1}") %
-                        filename.string());
+                        filename.u8string());
         XojMsgBox::showErrorToUser(nullptr, msg);
     }
 }
@@ -140,9 +148,25 @@ void Util::openFileWithFilebrowser(const fs::path& filename) {
     if (system(command.c_str()) != 0) {
         string msg = FS(_F("File couldn't be opened. You have to do it manually:\n"
                            "URL: {1}") %
-                        filename.string());
+                        filename.u8string());
         XojMsgBox::showErrorToUser(nullptr, msg);
     }
+}
+
+auto Util::getGettextFilepath(const char* localeDir) -> fs::path {
+    const char* gettextEnv = g_getenv("TEXTDOMAINDIR");
+    // Only consider first path in environment variable
+    std::string directories;
+    if (gettextEnv) {
+        directories = std::string(gettextEnv);
+        size_t firstDot = directories.find(':');
+        if (firstDot != std::string::npos) {
+            directories = directories.substr(0, firstDot);
+        }
+    }
+    const char* dir = (gettextEnv) ? directories.c_str() : localeDir;
+    g_message("TEXTDOMAINDIR = %s, PACKAGE_LOCALE_DIR = %s, chosen directory = %s", gettextEnv, localeDir, dir);
+    return fs::path(dir);
 }
 
 auto Util::getAutosaveFilepath() -> fs::path {
@@ -153,8 +177,7 @@ auto Util::getAutosaveFilepath() -> fs::path {
 
 auto Util::getConfigFolder() -> fs::path {
     auto p = fs::u8path(g_get_user_config_dir());
-    p /= g_get_prgname();
-    return p;
+    return (p /= CONFIG_FOLDER_NAME);
 }
 
 auto Util::getConfigSubfolder(const fs::path& subfolder) -> fs::path {
@@ -166,7 +189,7 @@ auto Util::getConfigSubfolder(const fs::path& subfolder) -> fs::path {
 
 auto Util::getCacheSubfolder(const fs::path& subfolder) -> fs::path {
     auto p = fs::u8path(g_get_user_cache_dir());
-    p /= g_get_prgname();
+    p /= CONFIG_FOLDER_NAME;
     p /= subfolder;
 
     return Util::ensureFolderExists(p);
@@ -174,7 +197,7 @@ auto Util::getCacheSubfolder(const fs::path& subfolder) -> fs::path {
 
 auto Util::getDataSubfolder(const fs::path& subfolder) -> fs::path {
     auto p = fs::u8path(g_get_user_data_dir());
-    p /= g_get_prgname();
+    p /= CONFIG_FOLDER_NAME;
     p /= subfolder;
 
     return Util::ensureFolderExists(p);
@@ -204,7 +227,7 @@ auto Util::ensureFolderExists(const fs::path& p) -> fs::path {
         fs::create_directories(p);
     } catch (fs::filesystem_error const& fe) {
         Util::execInUiThread([=]() {
-            string msg = FS(_F("Could not create folder: {1}\nFailed with error: {2}") % p.string() % fe.what());
+            string msg = FS(_F("Could not create folder: {1}\nFailed with error: {2}") % p.u8string() % fe.what());
             g_warning("%s %s", msg.c_str(), fe.what());
             XojMsgBox::showErrorToUser(nullptr, msg);
         });

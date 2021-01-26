@@ -110,7 +110,6 @@ public:
 private:
     /**
      * Change the tool according to the device and button
-     * @return true to ignore event
      */
     bool changeTool();
 

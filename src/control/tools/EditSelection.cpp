@@ -16,6 +16,8 @@
 #include "serializing/ObjectOutputStream.h"
 #include "undo/ColorUndoAction.h"
 #include "undo/FontUndoAction.h"
+#include "undo/InsertUndoAction.h"
+#include "undo/LineStyleUndoAction.h"
 #include "undo/SizeUndoAction.h"
 #include "undo/UndoRedoHandler.h"
 
@@ -241,28 +243,12 @@ auto EditSelection::getYOnViewAbsolute() -> int {
 }
 
 /**
- * Get the width in View coordinates
- */
-auto EditSelection::getViewWidth() -> int {
-    double zoom = view->getXournal()->getZoom();
-    return this->width * zoom;
-}
-
-/**
- * Get the height in View coordinates
- */
-auto EditSelection::getViewHeight() -> int {
-    double zoom = view->getXournal()->getZoom();
-    return this->height * zoom;
-}
-
-/**
  * Sets the tool size for pen or eraser, returs an undo action
  * (or nullptr if nothing is done)
  */
-auto EditSelection::setSize(ToolSize size, const double* thicknessPen, const double* thicknessHilighter,
+auto EditSelection::setSize(ToolSize size, const double* thicknessPen, const double* thicknessHighlighter,
                             const double* thicknessEraser) -> UndoAction* {
-    return this->contents->setSize(size, thicknessPen, thicknessHilighter, thicknessEraser);
+    return this->contents->setSize(size, thicknessPen, thicknessHighlighter, thicknessEraser);
 }
 
 /**
@@ -272,6 +258,12 @@ auto EditSelection::setSize(ToolSize size, const double* thicknessPen, const dou
 auto EditSelection::setFill(int alphaPen, int alphaHighligther) -> UndoAction* {
     return this->contents->setFill(alphaPen, alphaHighligther);
 }
+
+/**
+ * Set the line style of all elements, return an undo action
+ * (Or nullptr if nothing done)
+ */
+auto EditSelection::setLineStyle(LineStyle style) -> UndoActionPtr { return this->contents->setLineStyle(style); }
 
 /**
  * Set the color of all elements, return an undo action
@@ -309,9 +301,16 @@ void EditSelection::addElement(Element* e, Layer::ElementIndex order) {
 }
 
 /**
- * Returns all containig elements of this selections
+ * Returns all containing elements of this selection
  */
 auto EditSelection::getElements() -> vector<Element*>* { return this->contents->getElements(); }
+
+/**
+ * Returns the insert order of this selection
+ */
+auto EditSelection::getInsertOrder() const -> std::deque<std::pair<Element*, Layer::ElementIndex>> const& {
+    return this->contents->getInsertOrder();
+}
 
 /**
  * Finish the current movement
@@ -462,7 +461,7 @@ void EditSelection::mouseMove(double mouseX, double mouseY, bool alt) {
 
             double snappedX = snappingHandler.snapHorizontally(this->snappedBounds.x, alt);
             double snappedY = snappingHandler.snapVertically(this->snappedBounds.y + this->snappedBounds.height, alt);
-            double dx = snappedX - this->snappedBounds.width;
+            double dx = snappedX - this->snappedBounds.x;
             double dy = snappedY - this->snappedBounds.y - this->snappedBounds.height;
             double fx = (this->snappedBounds.width > minSize) ?
                                 (this->snappedBounds.width - dx) / this->snappedBounds.width :
@@ -596,7 +595,7 @@ auto EditSelection::getPageViewUnderCursor() -> XojPageView* {
 
 
     Layout* layout = gtk_xournal_get_layout(this->view->getXournal()->getWidget());
-    XojPageView* v = layout->getViewAt(hx, hy);
+    XojPageView* v = layout->getPageViewAt(hx, hy);
 
     return v;
 }
@@ -634,7 +633,22 @@ void EditSelection::translateToView(XojPageView* v) {
 }
 
 void EditSelection::copySelection() {
-    undo->addUndoAction(UndoActionPtr(contents->copySelection(this->view->getPage(), this->view, this->x, this->y)));
+    // clone elements in the insert order
+    std::deque<std::pair<Element*, Layer::ElementIndex>> clonedInsertOrder;
+    for (auto [e, index]: getInsertOrder()) {
+        clonedInsertOrder.emplace_back(e->clone(), index);
+    }
+
+    // apply transformations and add to layer
+    finalizeSelection();
+
+    // add undo action
+    PageRef page = this->view->getPage();
+    Layer* layer = page->getSelectedLayer();
+    undo->addUndoAction(std::unique_ptr<UndoAction>(new InsertsUndoAction(page, layer, *getElements())));
+
+    // restore insert order
+    contents->replaceInsertOrder(clonedInsertOrder);
 }
 
 /**
@@ -891,6 +905,11 @@ void EditSelection::serialize(ObjectOutputStream& out) {
     out.writeDouble(this->width);
     out.writeDouble(this->height);
 
+    out.writeDouble(this->snappedBounds.x);
+    out.writeDouble(this->snappedBounds.y);
+    out.writeDouble(this->snappedBounds.width);
+    out.writeDouble(this->snappedBounds.height);
+
     this->contents->serialize(out);
     out.endObject();
 
@@ -907,6 +926,11 @@ void EditSelection::readSerialized(ObjectInputStream& in) {
     this->width = in.readDouble();
     this->height = in.readDouble();
 
+    double xSnap = in.readDouble();
+    double ySnap = in.readDouble();
+    double wSnap = in.readDouble();
+    double hSnap = in.readDouble();
+    this->snappedBounds = Rectangle<double>{xSnap, ySnap, wSnap, hSnap};
     this->contents->readSerialized(in);
 
     in.endObject();

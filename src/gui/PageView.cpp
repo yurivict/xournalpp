@@ -183,6 +183,7 @@ void XojPageView::endText() {
 
     delete this->textEditor;
     this->textEditor = nullptr;
+    this->xournal->getControl()->getWindow()->setFontButtonFont(settings->getFont());
     this->rerenderPage();
 }
 
@@ -244,6 +245,7 @@ void XojPageView::startText(double x, double y) {
             text->setY(oldtext->getY());
             text->setColor(oldtext->getColor());
             text->setFont(oldtext->getFont());
+            this->xournal->getControl()->getWindow()->setFontButtonFont(oldtext->getFont());
             text->setText(oldtext->getText());
             text->setTimestamp(oldtext->getTimestamp());
             text->setAudioFilename(oldtext->getAudioFilename());
@@ -286,7 +288,7 @@ auto XojPageView::onButtonPressEvent(const PositionInputData& pos) -> bool {
     XournalppCursor* cursor = xournal->getCursor();
     cursor->setMouseDown(true);
 
-    if ((h->getToolType() == TOOL_PEN || h->getToolType() == TOOL_HILIGHTER) &&
+    if ((h->getToolType() == TOOL_PEN || h->getToolType() == TOOL_HIGHLIGHTER) &&
                 h->getDrawingType() != DRAWING_TYPE_SPLINE ||
         (h->getToolType() == TOOL_ERASER && h->getEraserType() == ERASER_TYPE_WHITEOUT)) {
         delete this->inputHandler;
@@ -307,7 +309,7 @@ auto XojPageView::onButtonPressEvent(const PositionInputData& pos) -> bool {
         }
 
         this->inputHandler->onButtonPressEvent(pos);
-    } else if ((h->getToolType() == TOOL_PEN || h->getToolType() == TOOL_HILIGHTER) &&
+    } else if ((h->getToolType() == TOOL_PEN || h->getToolType() == TOOL_HIGHLIGHTER) &&
                h->getDrawingType() == DRAWING_TYPE_SPLINE) {
         if (!this->inputHandler) {
             this->inputHandler = new SplineHandler(this->xournal, this, getPage());
@@ -402,6 +404,7 @@ auto XojPageView::onButtonDoublePressEvent(const PositionInputData& pos) -> bool
             if (elemType == ELEMENT_TEXT) {
                 this->xournal->clearSelection();
                 toolHandler->selectTool(TOOL_TEXT);
+                toolHandler->fireToolChanged();
                 // Simulate a button press; there's too many things that we
                 // could forget to do if we manually call startText
                 this->onButtonPressEvent(pos);
@@ -477,6 +480,12 @@ auto XojPageView::onMotionNotifyEvent(const PositionInputData& pos) -> bool {
     }
 
     return false;
+}
+
+void XojPageView::onMotionCancelEvent() {
+    if (this->inputHandler) {
+        this->inputHandler->onMotionCancelEvent();
+    }
 }
 
 auto XojPageView::onButtonReleaseEvent(const PositionInputData& pos) -> bool {
@@ -803,10 +812,6 @@ auto XojPageView::paintPage(cairo_t* cr, GdkRectangle* rect) -> bool {
 
     g_mutex_unlock(&this->drawingMutex);
     return true;
-}
-
-auto XojPageView::containsY(int y) const -> bool {
-    return (y >= this->getY() && y <= (this->getY() + this->getDisplayHeight()));
 }
 
 /**

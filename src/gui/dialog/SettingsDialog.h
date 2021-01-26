@@ -17,6 +17,7 @@
 #include "util/audio/DeviceInfo.h"
 
 #include "DeviceClassConfigGui.h"
+#include "LanguageConfigGui.h"
 #include "LatexSettingsPanel.h"
 
 class ButtonConfigGui;
@@ -34,21 +35,43 @@ public:
     void setDpi(int dpi);
 
     /**
-     * Autosave was toggled, enable / disable autosave config
+     * Set active regions
      */
     void enableWithCheckbox(const string& checkbox, const string& widget);
+    void disableWithCheckbox(const string& checkbox, const string& widget);
+
+    /*
+     * Listeners for changes to settings.
+     */
     void customHandRecognitionToggled();
     void customStylusIconTypeChanged();
+
+    /**
+     * Update sensitivity, tooltips, etc. for touch drawing based on
+     * its dependent settings.
+     */
+    void updateTouchDrawingOptions();
+
+    /**
+     * Update whether options can be selected, tooltips, etc. for
+     * pressure sensitivity options (e.g. pressure multiplier).
+     */
+    void updatePressureSensitivityOptions();
 
 private:
     void load();
     void loadCheckbox(const char* name, gboolean value);
     bool getCheckbox(const char* name);
 
+    void loadSlider(const char* name, double value);
+    double getSlider(const char* name);
+
     static string updateHideString(const string& hidden, bool hideMenubar, bool hideSidebar);
 
     void initMouseButtonEvents();
     void initMouseButtonEvents(const char* hbox, int button, bool withDevice = false);
+
+    void initLanguageSettings();
 
 private:
     Settings* settings = nullptr;
@@ -58,6 +81,7 @@ private:
     vector<DeviceInfo> audioInputDevices;
     vector<DeviceInfo> audioOutputDevices;
 
+    std::unique_ptr<LanguageConfigGui> languageConfig;
     vector<ButtonConfigGui*> buttonConfigs;
     vector<DeviceClassConfigGui*> deviceClassConfigs;
 

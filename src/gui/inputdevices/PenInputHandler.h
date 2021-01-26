@@ -25,7 +25,7 @@ protected:
      */
     bool deviceClassPressed = false;
     /**
-     * modifier varaibles storing whether button 2 and 3 are pressed
+     * modifier variables storing whether button 2 and 3 are pressed
      */
     bool modifier2 = false;
     bool modifier3 = false;
@@ -34,6 +34,11 @@ protected:
      * Reference to the last event
      */
     InputEvent lastEvent{};
+
+    /**
+     * Last pressure inferred.
+     */
+    double lastPressure{0.0};
 
     /**
      * Reference to the last event actually hitting a page
@@ -97,6 +102,13 @@ protected:
      */
     bool actionEnd(InputEvent const& event);
 
+    /**
+     * @brief Change the tool according to the InputHandler and buttons pressed
+     *
+     * @param event some Inputevent
+     * @return true if tool was changed successfully
+     * @return false if tool was not changed successfully (currently only in TouchDrawingInputHandler)
+     */
     virtual bool changeTool(InputEvent const& event) = 0;
 
     /**
@@ -111,4 +123,23 @@ protected:
      * @param event
      */
     void updateLastEvent(InputEvent const& event);
+
+    /**
+     * Estimate pressure based on pen speed using the previous event.
+     *
+     * @param pos The position of the current event
+     * @param page The page the event is relative to.
+     * @return The filtered pressure.
+     */
+    double inferPressureIfEnabled(PositionInputData const& pos, XojPageView* page);
+
+    /**
+     * @brief Apply filters (e.g. minimum pressure, pressure inference, etc.) to
+     * the pressure at pos.
+     *
+     * @param pos The position of the current event
+     * @param page The page the event is relative to
+     * @return The filtered pressure.
+     */
+    double filterPressure(PositionInputData const& pos, XojPageView* page);
 };

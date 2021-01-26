@@ -18,13 +18,10 @@
 
 CustomExportJob::CustomExportJob(Control* control): BaseExportJob(control, _("Custom Export")) {
     // Supported filters
-    filters[_("PDF files")] = new ExportType(".pdf", false);
-    filters[_("PDF with plain background")] = new ExportType(".pdf", true);
-    filters[_("PNG graphics")] = new ExportType(".png", false);
-    filters[_("PNG with transparent background")] = new ExportType(".png", true);
-    filters[_("SVG graphics")] = new ExportType(".svg", false);
-    filters[_("SVG with transparent background")] = new ExportType(".svg", true);
-    filters[_("Xournal (Compatibility)")] = new ExportType(".xoj", false);
+    filters[_("PDF files")] = new ExportType(".pdf");
+    filters[_("PNG graphics")] = new ExportType(".png");
+    filters[_("SVG graphics")] = new ExportType(".svg");
+    filters[_("Xournal (Compatibility)")] = new ExportType(".xoj");
 }
 
 CustomExportJob::~CustomExportJob() {
@@ -45,17 +42,18 @@ void CustomExportJob::addFilterToDialog() {
     }
 }
 
-auto CustomExportJob::isUriValid(string& uri) -> bool {
-    if (!BaseExportJob::isUriValid(uri)) {
+auto CustomExportJob::testAndSetFilepath(fs::path file) -> bool {
+    if (!BaseExportJob::testAndSetFilepath(std::move(file))) {
         return false;
     }
 
     // Extract the file filter selected
     this->chosenFilterName = BaseExportJob::getFilterName();
+    auto chosenFilter = filters.at(this->chosenFilterName);
 
     // Remove any pre-existing extension and adds the chosen one
-    Util::clearExtensions(filepath, filters[this->chosenFilterName]->extension);
-    filepath += filters[this->chosenFilterName]->extension;
+    Util::clearExtensions(filepath, chosenFilter->extension);
+    filepath += chosenFilter->extension;
 
     return checkOverwriteBackgroundPDF(filepath);
 }
@@ -74,13 +72,12 @@ auto CustomExportJob::showFilechooser() -> bool {
     doc->lock();
     auto* dlg = new ExportDialog(control->getGladeSearchPath());
     if (filepath.extension() == ".pdf") {
-        dlg->removeDpiSelection();
+        dlg->showProgressiveMode();
         format = EXPORT_GRAPHICS_PDF;
     } else if (filepath.extension() == ".svg") {
-        dlg->removeDpiSelection();
+        dlg->removeQualitySetting();
         format = EXPORT_GRAPHICS_SVG;
     } else if (filepath.extension() == ".png") {
-        dlg->removeDpiSelection();
         format = EXPORT_GRAPHICS_PNG;
     }
 
@@ -94,7 +91,12 @@ auto CustomExportJob::showFilechooser() -> bool {
     }
 
     exportRange = dlg->getRange();
-    pngDpi = dlg->getPngDpi();
+    progressiveMode = dlg->progressiveMode();
+    exportBackground = dlg->getBackgroundType();
+
+    if (format == EXPORT_GRAPHICS_PNG) {
+        pngQualityParameter = dlg->getPngQualityParameter();
+    }
 
     delete dlg;
     doc->unlock();
@@ -105,12 +107,11 @@ auto CustomExportJob::showFilechooser() -> bool {
  * Create one Graphics file per page
  */
 void CustomExportJob::exportGraphics() {
-    bool hideBackground = filters[this->chosenFilterName]->withoutBackground;
-
-    ImageExport imgExport(control->getDocument(), filepath, format, hideBackground, exportRange);
-    imgExport.setPngDpi(pngDpi);
+    ImageExport imgExport(control->getDocument(), filepath, format, exportBackground, exportRange);
+    if (format == EXPORT_GRAPHICS_PNG) {
+        imgExport.setQualityParameter(pngQualityParameter);
+    }
     imgExport.exportGraphics(control);
-
     errorMsg = imgExport.getLastErrorMsg();
 }
 
@@ -137,9 +138,9 @@ void CustomExportJob::run() {
 
         XojPdfExport* pdfe = XojPdfExportFactory::createExport(doc, control);
 
-        pdfe->setNoBackgroundExport(filters[this->chosenFilterName]->withoutBackground);
+        pdfe->setExportBackground(exportBackground);
 
-        if (!pdfe->createPdf(this->filepath, exportRange)) {
+        if (!pdfe->createPdf(this->filepath, exportRange, progressiveMode)) {
             this->errorMsg = pdfe->getLastError();
         }
 

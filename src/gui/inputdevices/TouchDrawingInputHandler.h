@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+#include "control/Actions.h"
+
 #include "PenInputHandler.h"
 #include "XournalType.h"
 
@@ -21,7 +23,8 @@ class InputContext;
 
 class TouchDrawingInputHandler: public PenInputHandler {
 private:
-    GdkEventSequence* currentSequence = nullptr;
+    GdkEventSequence* primarySequence = nullptr;
+    GdkEventSequence* secondarySequence = nullptr;
 
 public:
     explicit TouchDrawingInputHandler(InputContext* inputContext);
@@ -30,5 +33,15 @@ public:
     bool handleImpl(InputEvent const& event) override;
 
 protected:
+    /**
+     * @brief Change the tool according to Touch Settings
+     *
+     * @param event some Inputevent
+     * @return true if tool was changed successfully
+     * @return false if tool was not changed successfully
+     */
     bool changeTool(InputEvent const& event) override;
+
+private:
+    void updateKineticScrollingEnabled();
 };

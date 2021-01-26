@@ -33,7 +33,11 @@ Settings::~Settings() {
 
 void Settings::loadDefault() {
     this->pressureSensitivity = true;
+    this->minimumPressure = 0.05;
+    this->pressureMultiplier = 1.0;
+    this->pressureGuessing = false;
     this->zoomGesturesEnabled = true;
+
     this->maximized = false;
     this->showPairedPages = false;
     this->presentationMode = false;
@@ -102,6 +106,7 @@ void Settings::loadDefault() {
     this->snapGridSize = DEFAULT_GRID_SIZE;
 
     this->touchWorkaround = false;
+    this->touchDrawing = false;
 
     this->defaultSaveName = _("%F-Note-%H-%M");
 
@@ -109,10 +114,10 @@ void Settings::loadDefault() {
     this->buttonConfig[BUTTON_ERASER] =
             new ButtonConfig(TOOL_ERASER, Color{0x000000U}, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
     // Middle button
-    this->buttonConfig[BUTTON_MIDDLE] =
+    this->buttonConfig[BUTTON_MOUSE_MIDDLE] =
             new ButtonConfig(TOOL_NONE, Color{0x000000U}, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
     // Right button
-    this->buttonConfig[BUTTON_RIGHT] =
+    this->buttonConfig[BUTTON_MOUSE_RIGHT] =
             new ButtonConfig(TOOL_NONE, Color{0x000000U}, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
     // Touch
     this->buttonConfig[BUTTON_TOUCH] =
@@ -121,16 +126,22 @@ void Settings::loadDefault() {
     this->buttonConfig[BUTTON_DEFAULT] =
             new ButtonConfig(TOOL_PEN, Color{0x000000U}, TOOL_SIZE_FINE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
     // Pen button 1
-    this->buttonConfig[BUTTON_STYLUS] =
+    this->buttonConfig[BUTTON_STYLUS_ONE] =
             new ButtonConfig(TOOL_NONE, Color{0x000000U}, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
     // Pen button 2
-    this->buttonConfig[BUTTON_STYLUS2] =
+    this->buttonConfig[BUTTON_STYLUS_TWO] =
             new ButtonConfig(TOOL_NONE, Color{0x000000U}, TOOL_SIZE_NONE, DRAWING_TYPE_DEFAULT, ERASER_TYPE_NONE);
 
     this->fullscreenHideElements = "mainMenubar";
     this->presentationHideElements = "mainMenubar,sidebarContents";
 
+    this->touchZoomStartThreshold = 0.0;
+
+    this->pageRerenderThreshold = 5.0;
     this->pdfPageCacheSize = 10;
+    this->preloadPagesBefore = 3U;
+    this->preloadPagesAfter = 5U;
+    this->eagerPageCleanup = true;
 
     this->selectionBorderColor = 0xff0000U;  // red
     this->selectionMarkerColor = 0x729fcfU;  // light blue
@@ -292,16 +303,20 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
     }
     if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("pressureSensitivity")) == 0) {
         this->pressureSensitivity = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("minimumPressure")) == 0) {
+        this->minimumPressure = g_ascii_strtod(reinterpret_cast<const char*>(value), nullptr);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("pressureMultiplier")) == 0) {
+        this->pressureMultiplier = g_ascii_strtod(reinterpret_cast<const char*>(value), nullptr);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("zoomGesturesEnabled")) == 0) {
         this->zoomGesturesEnabled = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("selectedToolbar")) == 0) {
         this->selectedToolbar = reinterpret_cast<const char*>(value);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("lastSavePath")) == 0) {
-        this->lastSavePath = reinterpret_cast<const char*>(value);
+        this->lastSavePath = fs::u8path(reinterpret_cast<const char*>(value));
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("lastOpenPath")) == 0) {
-        this->lastOpenPath = reinterpret_cast<const char*>(value);
+        this->lastOpenPath = fs::u8path(reinterpret_cast<const char*>(value));
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("lastImagePath")) == 0) {
-        this->lastImagePath = reinterpret_cast<const char*>(value);
+        this->lastImagePath = fs::u8path(reinterpret_cast<const char*>(value));
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("zoomStep")) == 0) {
         this->zoomStep = tempg_ascii_strtod(reinterpret_cast<const char*>(value), nullptr);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("zoomStepScroll")) == 0) {
@@ -380,8 +395,18 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->fullscreenHideElements = reinterpret_cast<const char*>(value);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("presentationHideElements")) == 0) {
         this->presentationHideElements = reinterpret_cast<const char*>(value);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("touchZoomStartThreshold")) == 0) {
+        this->touchZoomStartThreshold = g_ascii_strtod(reinterpret_cast<const char*>(value), nullptr);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("pageRerenderThreshold")) == 0) {
+        this->pageRerenderThreshold = g_ascii_strtod(reinterpret_cast<const char*>(value), nullptr);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("pdfPageCacheSize")) == 0) {
         this->pdfPageCacheSize = g_ascii_strtoll(reinterpret_cast<const char*>(value), nullptr, 10);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("preloadPagesBefore")) == 0) {
+        this->preloadPagesBefore = g_ascii_strtoull(reinterpret_cast<const char*>(value), nullptr, 10);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("preloadPagesAfter")) == 0) {
+        this->preloadPagesAfter = g_ascii_strtoull(reinterpret_cast<const char*>(value), nullptr, 10);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("eagerPageCleanup")) == 0) {
+        this->eagerPageCleanup = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("selectionBorderColor")) == 0) {
         this->selectionBorderColor = Color(g_ascii_strtoull(reinterpret_cast<const char*>(value), nullptr, 10));
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("selectionMarkerColor")) == 0) {
@@ -412,6 +437,10 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->snapGridTolerance = tempg_ascii_strtod(reinterpret_cast<const char*>(value), nullptr);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("touchWorkaround")) == 0) {
         this->touchWorkaround = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("touchDrawing")) == 0) {
+        this->touchDrawing = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("pressureGuessing")) == 0) {
+        this->pressureGuessing = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("scrollbarHideType")) == 0) {
         if (xmlStrcmp(value, reinterpret_cast<const xmlChar*>("both")) == 0) {
             this->scrollbarHideType = SCROLLBAR_HIDE_BOTH;
@@ -466,6 +495,8 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->snapRecognizedShapesEnabled = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("restoreLineWidthEnabled")) == 0) {
         this->restoreLineWidthEnabled = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("preferredLocale")) == 0) {
+        this->preferredLocale = reinterpret_cast<char*>(value);
     }
 
     xmlFree(name);
@@ -489,7 +520,7 @@ void Settings::loadButtonConfig() {
     SElement& s = getCustomElement("buttonConfig");
 
     for (int i = 0; i < BUTTON_COUNT; i++) {
-        SElement& e = s.child(buttonToString(static_cast<Buttons>(i)));
+        SElement& e = s.child(buttonToString(static_cast<Button>(i)));
         ButtonConfig* cfg = buttonConfig[i];
 
         string sType;
@@ -497,7 +528,7 @@ void Settings::loadButtonConfig() {
             ToolType type = toolTypeFromString(sType);
             cfg->action = type;
 
-            if (type == TOOL_PEN || type == TOOL_HILIGHTER) {
+            if (type == TOOL_PEN || type == TOOL_HIGHLIGHTER) {
                 string drawingType;
                 if (e.getString("drawingType", drawingType)) {
                     cfg->drawingType = drawingTypeFromString(drawingType);
@@ -512,7 +543,7 @@ void Settings::loadButtonConfig() {
                 }
             }
 
-            if (type == TOOL_PEN || type == TOOL_HILIGHTER || type == TOOL_TEXT) {
+            if (type == TOOL_PEN || type == TOOL_HIGHLIGHTER || type == TOOL_TEXT) {
                 if (int iColor; e.getInt("color", iColor)) {
                     cfg->color = Color(iColor);
                 }
@@ -647,18 +678,18 @@ void Settings::saveButtonConfig() {
     s.clear();
 
     for (int i = 0; i < BUTTON_COUNT; i++) {
-        SElement& e = s.child(buttonToString(static_cast<Buttons>(i)));
+        SElement& e = s.child(buttonToString(static_cast<Button>(i)));
         ButtonConfig* cfg = buttonConfig[i];
 
         ToolType type = cfg->action;
         e.setString("tool", toolTypeToString(type));
 
-        if (type == TOOL_PEN || type == TOOL_HILIGHTER) {
+        if (type == TOOL_PEN || type == TOOL_HIGHLIGHTER) {
             e.setString("drawingType", drawingTypeToString(cfg->drawingType));
             e.setString("size", toolSizeToString(cfg->size));
         }  // end if pen or highlighter
 
-        if (type == TOOL_PEN || type == TOOL_HILIGHTER || type == TOOL_TEXT) {
+        if (type == TOOL_PEN || type == TOOL_HIGHLIGHTER || type == TOOL_TEXT) {
             e.setIntHex("color", int32_t(cfg->color));
         }
 
@@ -712,18 +743,21 @@ void Settings::save() {
     xmlDocSetRootElement(doc, root);
     xmlNodePtr com = xmlNewComment(
             reinterpret_cast<const xmlChar*>("The Xournal++ settings file. Do not edit this file! "
-                                             "The most settings are available in the Settings dialog, "
+                                             "Most settings are available in the Settings dialog, "
                                              "the others are commented in this file, but handle with care!"));
     xmlAddPrevSibling(root, com);
 
     WRITE_BOOL_PROP(pressureSensitivity);
+    WRITE_DOUBLE_PROP(minimumPressure);
+    WRITE_DOUBLE_PROP(pressureMultiplier);
+
     WRITE_BOOL_PROP(zoomGesturesEnabled);
 
     WRITE_STRING_PROP(selectedToolbar);
 
-    auto lastSavePath = this->lastSavePath.string();
-    auto lastOpenPath = this->lastOpenPath.string();
-    auto lastImagePath = this->lastImagePath.string();
+    auto lastSavePath = this->lastSavePath.u8string();
+    auto lastOpenPath = this->lastOpenPath.u8string();
+    auto lastImagePath = this->lastImagePath.u8string();
     WRITE_STRING_PROP(lastSavePath);
     WRITE_STRING_PROP(lastOpenPath);
     WRITE_STRING_PROP(lastImagePath);
@@ -806,13 +840,21 @@ void Settings::save() {
     WRITE_DOUBLE_PROP(snapGridSize);
 
     WRITE_BOOL_PROP(touchWorkaround);
+    WRITE_BOOL_PROP(touchDrawing);
+    WRITE_BOOL_PROP(pressureGuessing);
 
     WRITE_UINT_PROP(selectionBorderColor);
     WRITE_UINT_PROP(backgroundColor);
     WRITE_UINT_PROP(selectionMarkerColor);
 
+    WRITE_DOUBLE_PROP(touchZoomStartThreshold);
+    WRITE_DOUBLE_PROP(pageRerenderThreshold);
+
     WRITE_INT_PROP(pdfPageCacheSize);
     WRITE_COMMENT("The count of rendered PDF pages which will be cached.");
+    WRITE_UINT_PROP(preloadPagesBefore);
+    WRITE_UINT_PROP(preloadPagesAfter);
+    WRITE_BOOL_PROP(eagerPageCleanup);
 
     WRITE_COMMENT("Config for new pages");
     WRITE_STRING_PROP(pageTemplate);
@@ -844,6 +886,8 @@ void Settings::save() {
     WRITE_BOOL_PROP(newInputSystemEnabled);
     WRITE_BOOL_PROP(inputSystemTPCButton);
     WRITE_BOOL_PROP(inputSystemDrawOutsideWindow);
+
+    WRITE_STRING_PROP(preferredLocale);
 
     WRITE_BOOL_PROP(latexSettings.autoCheckDependencies);
     // Inline WRITE_STRING_PROP(latexSettings.globalTemplatePath) since it
@@ -974,6 +1018,10 @@ void Settings::setScrollbarOnLeft(bool right) {
 auto Settings::isMenubarVisible() const -> bool { return this->menubarVisible; }
 
 void Settings::setMenubarVisible(bool visible) {
+    if (this->menubarVisible == visible) {
+        return;
+    }
+
     this->menubarVisible = visible;
 
     save();
@@ -1153,6 +1201,17 @@ void Settings::setSnapGridSize(double gridSize) {
     save();
 }
 
+auto Settings::getTouchDrawingEnabled() const -> bool { return this->touchDrawing; }
+
+void Settings::setTouchDrawingEnabled(bool b) {
+    if (this->touchDrawing == b) {
+        return;
+    }
+
+    this->touchDrawing = b;
+    save();
+}
+
 auto Settings::isTouchWorkaround() const -> bool { return this->touchWorkaround; }
 
 void Settings::setTouchWorkaround(bool b) {
@@ -1161,6 +1220,36 @@ void Settings::setTouchWorkaround(bool b) {
     }
 
     this->touchWorkaround = b;
+    save();
+}
+
+auto Settings::isPressureGuessingEnabled() const -> bool { return this->pressureGuessing; }
+void Settings::setPressureGuessingEnabled(bool b) {
+    if (this->pressureGuessing == b) {
+        return;
+    }
+
+    this->pressureGuessing = b;
+    save();
+}
+
+double Settings::getMinimumPressure() const { return this->minimumPressure; }
+void Settings::setMinimumPressure(double minimumPressure) {
+    if (this->minimumPressure == minimumPressure) {
+        return;
+    }
+
+    this->minimumPressure = minimumPressure;
+    save();
+}
+
+double Settings::getPressureMultiplier() const { return this->pressureMultiplier; }
+void Settings::setPressureMultiplier(double multiplier) {
+    if (this->pressureMultiplier == multiplier) {
+        return;
+    }
+
+    this->pressureMultiplier = multiplier;
     save();
 }
 
@@ -1502,20 +1591,6 @@ auto Settings::getButtonConfig(int id) -> ButtonConfig* {
     return this->buttonConfig[id];
 }
 
-auto Settings::getEraserButtonConfig() -> ButtonConfig* { return this->buttonConfig[BUTTON_ERASER]; }
-
-auto Settings::getMiddleButtonConfig() -> ButtonConfig* { return this->buttonConfig[BUTTON_MIDDLE]; }
-
-auto Settings::getRightButtonConfig() -> ButtonConfig* { return this->buttonConfig[BUTTON_RIGHT]; }
-
-auto Settings::getTouchButtonConfig() -> ButtonConfig* { return this->buttonConfig[BUTTON_TOUCH]; }
-
-auto Settings::getDefaultButtonConfig() -> ButtonConfig* { return this->buttonConfig[BUTTON_DEFAULT]; }
-
-auto Settings::getStylusButton1Config() -> ButtonConfig* { return this->buttonConfig[BUTTON_STYLUS]; }
-
-auto Settings::getStylusButton2Config() -> ButtonConfig* { return this->buttonConfig[BUTTON_STYLUS2]; }
-
 auto Settings::getFullscreenHideElements() const -> string const& { return this->fullscreenHideElements; }
 
 void Settings::setFullscreenHideElements(string elements) {
@@ -1530,6 +1605,27 @@ void Settings::setPresentationHideElements(string elements) {
     save();
 }
 
+auto Settings::getTouchZoomStartThreshold() const -> double { return this->touchZoomStartThreshold; }
+void Settings::setTouchZoomStartThreshold(double threshold) {
+    if (this->touchZoomStartThreshold == threshold) {
+        return;
+    }
+
+    this->touchZoomStartThreshold = threshold;
+    save();
+}
+
+
+auto Settings::getPDFPageRerenderThreshold() const -> double { return this->pageRerenderThreshold; }
+void Settings::setPDFPageRerenderThreshold(double threshold) {
+    if (this->pageRerenderThreshold == threshold) {
+        return;
+    }
+
+    this->pageRerenderThreshold = threshold;
+    save();
+}
+
 auto Settings::getPdfPageCacheSize() const -> int { return this->pdfPageCacheSize; }
 
 void Settings::setPdfPageCacheSize(int size) {
@@ -1537,6 +1633,36 @@ void Settings::setPdfPageCacheSize(int size) {
         return;
     }
     this->pdfPageCacheSize = size;
+    save();
+}
+
+auto Settings::getPreloadPagesBefore() const -> unsigned int { return this->preloadPagesBefore; }
+
+void Settings::setPreloadPagesBefore(unsigned int n) {
+    if (this->preloadPagesBefore == n) {
+        return;
+    }
+    this->preloadPagesBefore = n;
+    save();
+}
+
+auto Settings::getPreloadPagesAfter() const -> unsigned int { return this->preloadPagesAfter; }
+
+void Settings::setPreloadPagesAfter(unsigned int n) {
+    if (this->preloadPagesAfter == n) {
+        return;
+    }
+    this->preloadPagesAfter = n;
+    save();
+}
+
+auto Settings::isEagerPageCleanup() const -> bool { return this->eagerPageCleanup; }
+
+void Settings::setEagerPageCleanup(bool b) {
+    if (this->eagerPageCleanup == b) {
+        return;
+    }
+    this->eagerPageCleanup = b;
     save();
 }
 
@@ -1682,6 +1808,9 @@ void Settings::setRestoreLineWidthEnabled(bool enabled) { this->restoreLineWidth
 
 auto Settings::getRestoreLineWidthEnabled() const -> bool { return this->restoreLineWidthEnabled; }
 
+auto Settings::setPreferredLocale(std::string const& locale) -> void { this->preferredLocale = locale; }
+
+auto Settings::getPreferredLocale() const -> std::string { return this->preferredLocale; }
 
 void Settings::setIgnoredStylusEvents(int numEvents) {
     if (this->numIgnoredStylusEvents == numEvents) {

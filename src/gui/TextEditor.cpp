@@ -31,6 +31,7 @@ TextEditor::TextEditor(XojPageView* gui, GtkWidget* widget, Text* text, bool own
     gtk_text_buffer_place_cursor(this->buffer, &first);
 
     GtkSettings* settings = gtk_widget_get_settings(this->widget);
+    g_object_get(settings, "gtk-cursor-blink", &this->cursorBlink, nullptr);
     g_object_get(settings, "gtk-cursor-blink-time", &this->cursorBlinkTime, nullptr);
     g_object_get(settings, "gtk-cursor-blink-timeout", &this->cursorBlinkTimeout, nullptr);
 
@@ -42,7 +43,11 @@ TextEditor::TextEditor(XojPageView* gui, GtkWidget* widget, Text* text, bool own
     g_signal_connect(this->imContext, "retrieve-surrounding", G_CALLBACK(iMRetrieveSurroundingCallback), this);
     g_signal_connect(this->imContext, "delete-surrounding", G_CALLBACK(imDeleteSurroundingCallback), this);
 
-    blinkCallback(this);
+    if (this->cursorBlink) {
+        blinkCallback(this);
+    } else {
+        this->cursorVisible = true;
+    }
 }
 
 TextEditor::~TextEditor() {
@@ -523,11 +528,15 @@ void TextEditor::moveCursor(GtkMovementStep step, int count, bool extendSelectio
         gtk_widget_error_bell(this->widget);
     }
 
-    this->cursorVisible = false;
-    if (this->blinkTimeout) {
-        g_source_remove(this->blinkTimeout);
+    if (this->cursorBlink) {
+        this->cursorVisible = false;
+        if (this->blinkTimeout) {
+            g_source_remove(this->blinkTimeout);
+        }
+        blinkCallback(this);
+    } else {
+        repaintCursor();
     }
-    blinkCallback(this);
 }
 
 void TextEditor::findPos(GtkTextIter* iter, double xPos, double yPos) {
@@ -546,7 +555,7 @@ void TextEditor::findPos(GtkTextIter* iter, double xPos, double yPos) {
 void TextEditor::contentsChanged(bool forceCreateUndoAction) {
     string currentText = getText()->getText();
 
-    // I know it's a little bit bulky, but ABS on substracted size_t is a little bit unsafe
+    // I know it's a little bit bulky, but ABS on subtracted size_t is a little bit unsafe
     if (forceCreateUndoAction ||
         ((lastText.length() >= currentText.length()) ? (lastText.length() - currentText.length()) :
                                                        (currentText.length() - lastText.length())) > 100) {
@@ -854,7 +863,11 @@ void TextEditor::resetImContext() {
     }
 }
 
-void TextEditor::repaintCursor() { repaintEditor(); }
+void TextEditor::repaintCursor() {
+    double x = this->text->getX();
+    double y = this->text->getY();
+    this->gui->repaintArea(x, y, x + this->text->getElementWidth(), y + this->text->getElementHeight());
+}
 
 #define CURSOR_ON_MULTIPLIER 2
 #define CURSOR_OFF_MULTIPLIER 1
@@ -971,8 +984,9 @@ void TextEditor::paint(cairo_t* cr, GdkRectangle* repaintRect, double zoom) {
     bool hasSelection = gtk_text_buffer_get_selection_bounds(this->buffer, &start, &end);
 
     if (hasSelection) {
+        auto selectionColorU16 = Util::GdkRGBA_to_ColorU16(selectionColor);
         PangoAttribute* attrib =
-                pango_attr_background_new(selectionColor.red, selectionColor.green, selectionColor.blue);
+                pango_attr_background_new(selectionColorU16.red, selectionColorU16.green, selectionColorU16.blue);
         PangoAttrList* list = pango_layout_get_attributes(this->layout);
 
         attrib->start_index = getByteOffset(gtk_text_iter_get_offset(&start));
@@ -1010,8 +1024,7 @@ void TextEditor::paint(cairo_t* cr, GdkRectangle* repaintRect, double zoom) {
 
     // set the line always the same size on display
     cairo_set_line_width(cr, 1 / zoom);
-    cairo_set_source_rgb(cr, selectionColor.red / 65536.0, selectionColor.green / 65536.0,
-                         selectionColor.blue / 65536.0);
+    gdk_cairo_set_source_rgba(cr, &selectionColor);
 
     cairo_rectangle(cr, x0 - 5 / zoom, y0 - 5 / zoom, width + 10 / zoom, height + 10 / zoom);
     cairo_stroke(cr);

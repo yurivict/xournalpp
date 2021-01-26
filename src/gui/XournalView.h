@@ -1,7 +1,7 @@
 /*
  * Xournal++
  *
- * The widget wich displays the PDF and the drawings
+ * The widget which displays the PDF and the drawings
  *
  * @author Xournal++ Team
  * https://github.com/xournalpp/xournalpp
@@ -37,13 +37,11 @@ public:
     virtual ~XournalView();
 
 public:
-    void zoomIn();
-    void zoomOut();
-
     bool paint(GtkWidget* widget, GdkEventExpose* event);
 
     void requestPage(XojPageView* page);
 
+    // Recalculate the layout width and height amd layout the pages with the updated layout size
     void layoutPages();
 
     void scrollTo(size_t pageNo, double y = 0);
@@ -116,7 +114,7 @@ public:
     HandRecognition* getHandRecognition();
 
     /**
-     * @returnScrollbars
+     * @return Scrollbars
      */
     ScrollHandling* getScrollHandling();
 
@@ -142,11 +140,13 @@ public:
 private:
     void fireZoomChanged();
 
-    void addLoadPageToQue(PageRef page, int priority);
+    std::pair<size_t, size_t> preloadPageBounds(size_t page, size_t maxPage);
 
     Rectangle<double>* getVisibleRect(size_t page);
 
     static gboolean clearMemoryTimer(XournalView* widget);
+
+    void cleanupBufferCache();
 
     static void staticLayoutPages(GtkWidget* widget, GtkAllocation* allocation, void* data);
 

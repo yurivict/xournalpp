@@ -99,8 +99,8 @@ auto toolTypeToString(ToolType type) -> string {
             return "pen";
         case TOOL_ERASER:
             return "eraser";
-        case TOOL_HILIGHTER:
-            return "hilighter";
+        case TOOL_HIGHLIGHTER:
+            return "highlighter";
         case TOOL_TEXT:
             return "text";
         case TOOL_IMAGE:
@@ -141,8 +141,9 @@ auto toolTypeFromString(const string& type) -> ToolType {
     if (type == "eraser") {
         return TOOL_ERASER;
     }
-    if (type == "hilighter") {
-        return TOOL_HILIGHTER;
+    // recognize previous spelling of Highlighter, V1.0.19 (Dec 2020) and earlier
+    if (type == "highlighter" || type == "hilighter") {
+        return TOOL_HIGHLIGHTER;
     }
     if (type == "text") {
         return TOOL_TEXT;

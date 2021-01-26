@@ -1,5 +1,6 @@
 #include "XournalView.h"
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <tuple>
@@ -24,9 +25,18 @@
 #include "XournalppCursor.h"
 #include "filesystem.h"
 
+std::pair<size_t, size_t> XournalView::preloadPageBounds(size_t page, size_t maxPage) {
+    const size_t preloadBefore = this->control->getSettings()->getPreloadPagesBefore();
+    const size_t preloadAfter = this->control->getSettings()->getPreloadPagesAfter();
+    const size_t lower = page > preloadBefore ? page - preloadBefore : 0;
+    const size_t upper = std::min(maxPage, page + preloadAfter);
+    return {lower, upper};
+}
+
 XournalView::XournalView(GtkWidget* parent, Control* control, ScrollHandling* scrollHandling):
         scrollHandling(scrollHandling), control(control) {
     this->cache = new PdfCache(control->getSettings()->getPdfPageCacheSize());
+
     registerListener(control);
 
     InputContext* inputContext = nullptr;
@@ -86,40 +96,24 @@ void XournalView::staticLayoutPages(GtkWidget* widget, GtkAllocation* allocation
     xv->layoutPages();
 }
 
+
 auto XournalView::clearMemoryTimer(XournalView* widget) -> gboolean {
-    GList* list = nullptr;
-
-    for (auto&& page: widget->viewPages) {
-        if (page->getLastVisibleTime() > 0) {
-            list = g_list_insert_sorted(list, page, reinterpret_cast<GCompareFunc>(pageViewIncreasingClockTime));
-        }
-    }
-
-    int pixel = 2884560;
-    int firstPages = 4;
-
-    int i = 0;
-
-    for (GList* l = g_list_last(list); l != nullptr; l = l->prev)  // older (higher time) to newer (lower time)
-    {
-        if (firstPages) {
-            firstPages--;
-        } else {
-            auto* v = static_cast<XojPageView*>(l->data);
-
-            if (pixel <= 0) {
-                v->deleteViewBuffer();
-            } else {
-                pixel -= v->getBufferPixels();
-            }
-        }
-        i++;
-    }
-
-    g_list_free(list);
-
-    // call again
+    widget->cleanupBufferCache();
     return true;
+}
+
+auto XournalView::cleanupBufferCache() -> void {
+    const auto& [pagesLower, pagesUpper] = this->preloadPageBounds(this->currentPage, this->viewPages.size());
+    g_assert(pagesLower <= pagesUpper);
+
+    for (size_t i = 0; i < this->viewPages.size(); i++) {
+        auto&& page = this->viewPages[i];
+        const size_t pageNum = i + 1;
+        const bool isPreload = pagesLower <= pageNum && pageNum <= pagesUpper;
+        if (!isPreload && page->getLastVisibleTime() > 0 && page->getBufferPixels() > 0) {
+            page->deleteViewBuffer();
+        }
+    }
 }
 
 auto XournalView::getCurrentPage() const -> size_t { return currentPage; }
@@ -136,7 +130,7 @@ auto XournalView::onKeyPressEvent(GdkEventKey* event) -> bool {
     }
 
     // Esc leaves fullscreen mode
-    if (event->keyval == GDK_KEY_Escape || event->keyval == GDK_KEY_F11) {
+    if (event->keyval == GDK_KEY_Escape) {
         if (control->isFullscreen()) {
             control->setFullscreen(false);
             return true;
@@ -377,6 +371,19 @@ void XournalView::pageSelected(size_t page) {
     control->updatePageNumbers(currentPage, pdfPage);
 
     control->updateBackgroundSizeButton();
+
+    if (control->getSettings()->isEagerPageCleanup()) {
+        this->cleanupBufferCache();
+    }
+
+    // Load surrounding pages if they are not
+    const auto& [pagesLower, pagesUpper] = preloadPageBounds(page, this->viewPages.size());
+    g_assert(pagesLower <= pagesUpper);
+    for (size_t i = pagesLower; i < pagesUpper; i++) {
+        if (this->viewPages[i]->getBufferPixels() == 0) {
+            this->viewPages[i]->rerenderPage();
+        }
+    }
 }
 
 auto XournalView::getControl() -> Control* { return control; }
@@ -411,7 +418,7 @@ void XournalView::pageRelativeXY(int offCol, int offRow) {
     int col = view->getMappedCol();
 
     Layout* layout = gtk_xournal_get_layout(this->widget);
-    auto optionalPageIndex = layout->getIndexAtGridMap(row + offRow, col + offCol);
+    auto optionalPageIndex = layout->getPageIndexAtGridMap(row + offRow, col + offCol);
     if (optionalPageIndex) {
         this->scrollTo(*optionalPageIndex, 0);
     }
@@ -471,15 +478,11 @@ auto XournalView::getVisibleRect(XojPageView* redrawable) -> Rectangle<double>* 
 auto XournalView::getHandRecognition() -> HandRecognition* { return handRecognition; }
 
 /**
- * @returnScrollbars
+ * @return Scrollbars
  */
 auto XournalView::getScrollHandling() -> ScrollHandling* { return scrollHandling; }
 
 auto XournalView::getWidget() -> GtkWidget* { return widget; }
-
-void XournalView::zoomIn() { control->getZoomControl()->zoomOneStep(ZOOM_IN); }
-
-void XournalView::zoomOut() { control->getZoomControl()->zoomOneStep(ZOOM_OUT); }
 
 void XournalView::ensureRectIsVisible(int x, int y, int width, int height) {
     Layout* layout = gtk_xournal_get_layout(this->widget);
@@ -487,15 +490,19 @@ void XournalView::ensureRectIsVisible(int x, int y, int width, int height) {
 }
 
 void XournalView::zoomChanged() {
-    Layout* layout = gtk_xournal_get_layout(this->widget);
+
     size_t currentPage = this->getCurrentPage();
     XojPageView* view = getViewFor(currentPage);
+
     ZoomControl* zoom = control->getZoomControl();
+    this->cache->setAnyZoomChangeCausesRecache(false);  // We're zooming -- no need for repeated re-renders.
+    this->cache->setRefreshThreshold(control->getSettings()->getPDFPageRerenderThreshold());
 
     if (!view) {
         return;
     }
 
+    layoutPages();
 
     if (zoom->isZoomPresentationMode() || zoom->isZoomFitMode()) {
         scrollTo(currentPage);
@@ -503,11 +510,10 @@ void XournalView::zoomChanged() {
         auto pos = zoom->getScrollPositionAfterZoom();
         if (pos.x != -1 && pos.y != -1) {
             // Todo: This could be one source of all evil:
+            Layout* layout = gtk_xournal_get_layout(this->widget);
             layout->scrollAbs(pos.x, pos.y);
         }
     }
-    // move this somewhere else maybe
-    layout->recalculate();
 
     Document* doc = control->getDocument();
     doc->lock();
@@ -522,7 +528,12 @@ void XournalView::zoomChanged() {
     this->control->getScheduler()->blockRerenderZoom();
 }
 
-void XournalView::pageSizeChanged(size_t page) { layoutPages(); }
+void XournalView::pageSizeChanged(size_t page) {
+    layoutPages();
+    if (page != npos && page < this->viewPages.size()) {
+        this->viewPages[page]->rerenderPage();
+    }
+}
 
 void XournalView::pageChanged(size_t page) {
     if (page != npos && page < this->viewPages.size()) {
@@ -566,8 +577,9 @@ void XournalView::pageInserted(size_t page) {
 
     viewPages.insert(begin(viewPages) + page, pageView);
 
+    layoutPages();
+    // check which pages are visible and select the most visible page
     Layout* layout = gtk_xournal_get_layout(this->widget);
-    layout->recalculate();
     layout->updateVisibility();
 }
 
@@ -654,6 +666,12 @@ void XournalView::repaintSelection(bool evenWithoutSelection) {
 void XournalView::layoutPages() {
     Layout* layout = gtk_xournal_get_layout(this->widget);
     layout->recalculate();
+
+    // Todo (fabian): the following lines are conceptually wrong, the Layout::layoutPages function is meant to be called
+    //                by an expose event, but removing it, will break "add page".
+    auto rectangle = layout->getVisibleRect();
+    layout->layoutPages(std::max<int>(layout->getMinimalWidth(), std::lround(rectangle.width)),
+                        std::max<int>(layout->getMinimalHeight(), std::lround(rectangle.height)));
 }
 
 auto XournalView::getDisplayHeight() const -> int {

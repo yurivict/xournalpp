@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "control/Tool.h"
+#include "control/settings/SettingsEnums.h"
 
 #include "XournalType.h"
 
@@ -26,7 +27,38 @@ public:
     virtual ~ButtonConfig();
 
 public:
-    void acceptActions(ToolHandler* toolHandler);
+    /**
+     * @brief Apply Changes to the button tool in case "Don't Change" was selected for one of it's properties
+     * This is usually used after switching to a button tool from the toolbar tool
+     * Note: In case of the setting "Don't Change" for Size/DrawingType/EraserType the
+     * Size/DrawingType/EraserType of the corresponding tool in the toolbar is used.
+     *
+     * @param toolHandler
+     * @param button button to be applied
+     * @return true if some action was selected
+     * @return false if no action was selected
+     */
+    bool applyNoChangeSettings(ToolHandler* toolHandler, Button button);
+
+    /**
+     * @brief Initialize Button tool
+     * In case of "No change" settings the property will remain in it's default value.
+     * As this will be overwritten during `applyNoChangeSettings` this makes sense.
+     *
+     * @param toolHandler
+     * @param button
+     */
+    void initButton(ToolHandler* toolHandler, Button button);
+
+    /**
+     * @brief Apply the Config to the toolbar Tool
+     * This is used for applying the Default Button Config
+     *
+     * @param toolHandler
+     */
+    void applyConfigToToolbarTool(ToolHandler* toolHandler);
+
+
     ToolType getAction();
     bool getDisableDrawing() const;
     DrawingType getDrawingType();

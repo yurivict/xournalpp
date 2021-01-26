@@ -14,14 +14,9 @@ include_directories (
 add_subdirectory (xoj-preview-extractor)
 
 # Used for both util and xournalpp targets
-add_definitions (-g -Wreturn-type -Wuninitialized -Wunused-value -Wunused-variable)
+add_definitions(-g -Wreturn-type -Wuninitialized -Wunused-value -Wunused-variable -Wconversion)
 
-if (WIN32)
-  # optimize for size (the Windows .exe is really big)
-  set (xournalpp_LDFLAGS ${xournalpp_LDFLAGS} "-Os -s")
-elseif (APPLE OR LINUX)
-  # Nothing to do for APPLE and linux
-else ()
+if (NOT WIN32 AND (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU"))
   set(xournalpp_LDFLAGS ${xournalpp_LDFLAGS} -rdynamic)
 endif ()
 

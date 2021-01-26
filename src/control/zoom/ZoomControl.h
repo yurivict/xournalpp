@@ -111,7 +111,6 @@ public:
      * @param zoom zoom value depending zoom100Value
      */
     bool updateZoomFitValue(size_t pageNo = 0);
-    bool updateZoomFitValue(const Rectangle<double>& widget_rect, size_t pageNo = 0);
 
     /**
      * @return zoom value for zoom fit depending zoom100Value
@@ -122,7 +121,7 @@ public:
 
     void addZoomListener(ZoomListener* listener);
 
-    void initZoomHandler(GtkWidget* widget, XournalView* view, Control* control);
+    void initZoomHandler(GtkWidget* window, GtkWidget* widget, XournalView* v, Control* c);
 
     /**
      * Call this before any zoom is done, it saves the current page and position
@@ -149,6 +148,9 @@ public:
     /// Clear all stored data from startZoomSequence()
     void endZoomSequence();
 
+    /// Revert and end the current zoom sequence
+    void cancelZoomSequence();
+
     /// Update the scroll position manually
     void setScrollPositionAfterZoom(utl::Point<double> scrollPos);
 
@@ -169,12 +171,13 @@ protected:
     void pageSizeChanged(size_t page);
     void pageSelected(size_t page);
 
-    static bool onScrolledwindowMainScrollEvent(GtkWidget* widget, GdkEventScroll* event, ZoomControl* zoom);
-    static bool onWidgetSizeChangedEvent(GtkWidget* widget, GdkRectangle* allocation, ZoomControl* zoom);
-
 private:
     void zoomFit();
     void zoomPresentation();
+
+    friend bool onWindowSizeChangedEvent(GtkWidget* widget, GdkEvent* event, ZoomControl* zoom);
+    friend bool onScrolledwindowMainScrollEvent(GtkWidget* widget, GdkEventScroll* event, ZoomControl* zoom);
+    friend bool onTouchpadPinchEvent(GtkWidget* widget, GdkEventTouchpadPinch* event, ZoomControl* zoom);
 
 private:
     XournalView* view = nullptr;
@@ -205,6 +208,10 @@ private:
 
     /// Cursorposition x for Ctrl + Scroll
     utl::Point<double> scrollCursorPosition;
+
+    /// Size {x, y} of the pixels before the current page that
+    /// do not scale.
+    utl::Point<double> unscaledPixels;
 
     /**
      * Zoomstep value for Ctrl - and Zoom In and Out Button

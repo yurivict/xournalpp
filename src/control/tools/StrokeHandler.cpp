@@ -114,6 +114,11 @@ auto StrokeHandler::onMotionNotifyEvent(const PositionInputData& pos) -> bool {
     return true;
 }
 
+void StrokeHandler::onMotionCancelEvent() {
+    delete stroke;
+    stroke = nullptr;
+}
+
 void StrokeHandler::onButtonReleaseEvent(const PositionInputData& pos) {
     if (!stroke) {
         return;
@@ -207,7 +212,7 @@ void StrokeHandler::onButtonReleaseEvent(const PositionInputData& pos) {
     layer->addElement(stroke);
     page->fireElementChanged(stroke);
 
-    // Manually force the rendering of the stroke, if no motion event occurred inbetween, that would rerender the page.
+    // Manually force the rendering of the stroke, if no motion event occurred between, that would rerender the page.
     if (stroke->getPointCount() == 2) {
         this->redrawable->rerenderElement(stroke);
     }

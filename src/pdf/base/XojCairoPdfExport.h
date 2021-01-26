@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "control/jobs/BaseExportJob.h"
 #include "control/jobs/ProgressListener.h"
 #include "model/Document.h"
 
@@ -23,14 +24,14 @@ public:
     virtual ~XojCairoPdfExport();
 
 public:
-    virtual bool createPdf(fs::path const& file);
-    virtual bool createPdf(fs::path const& file, PageRangeVector& range);
+    virtual bool createPdf(fs::path const& file, bool progressiveMode);
+    virtual bool createPdf(fs::path const& file, PageRangeVector& range, bool progressiveMode);
     virtual string getLastError();
 
     /**
      * Export without background
      */
-    virtual void setNoBackgroundExport(bool noBackgroundExport);
+    virtual void setExportBackground(ExportBackgroundType exportBackground);
 
 private:
     bool startPdf(const fs::path& file);
@@ -47,6 +48,10 @@ private:
 #endif
     void endPdf();
     void exportPage(size_t page);
+    /**
+     * Export as a PDF document where each additional layer creates a
+     * new page */
+    void exportPageLayers(size_t page);
 
 private:
     Document* doc = nullptr;
@@ -55,7 +60,7 @@ private:
     cairo_surface_t* surface = nullptr;
     cairo_t* cr = nullptr;
 
-    bool noBackgroundExport = false;
+    ExportBackgroundType exportBackground = EXPORT_BACKGROUND_ALL;
 
     string lastError;
 };

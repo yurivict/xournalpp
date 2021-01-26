@@ -68,10 +68,10 @@ public:
     void setBool(const string& name, const bool value);
     void setString(const string& name, const string& value);
 
-    void setComment(const string& name, const string& comment);
+    [[maybe_unused]] void setComment(const string& name, const string& comment);
 
     bool getInt(const string& name, int& value);
-    bool getDouble(const string& name, double& value);
+    [[maybe_unused]] bool getDouble(const string& name, double& value);
     bool getBool(const string& name, bool& value);
     bool getString(const string& name, string& value);
 
@@ -113,6 +113,15 @@ public:
     // Getter- / Setter
     bool isPressureSensitivity() const;
     void setPressureSensitivity(gboolean presureSensitivity);
+
+    /**
+     * Input device pressure options
+     */
+    double getMinimumPressure() const;
+    void setMinimumPressure(double minimumPressure);
+
+    double getPressureMultiplier() const;
+    void setPressureMultiplier(double multiplier);
 
     /**
      * Getter, enable/disable
@@ -246,8 +255,14 @@ public:
     int getDrawDirModsRadius() const;
     void setDrawDirModsRadius(int pixels);
 
+    bool getTouchDrawingEnabled() const;
+    void setTouchDrawingEnabled(bool b);
+
     bool isTouchWorkaround() const;
     void setTouchWorkaround(bool b);
+
+    bool isPressureGuessingEnabled() const;
+    void setPressureGuessingEnabled(bool b);
 
     bool isSnapRotation() const;
     void setSnapRotation(bool b);
@@ -290,14 +305,6 @@ public:
 
     ButtonConfig* getButtonConfig(int id);
 
-    ButtonConfig* getEraserButtonConfig();
-    ButtonConfig* getMiddleButtonConfig();
-    ButtonConfig* getRightButtonConfig();
-    ButtonConfig* getTouchButtonConfig();
-    ButtonConfig* getDefaultButtonConfig();
-    ButtonConfig* getStylusButton1Config();
-    ButtonConfig* getStylusButton2Config();
-
     string const& getFullscreenHideElements() const;
     void setFullscreenHideElements(string elements);
 
@@ -313,8 +320,24 @@ public:
     Color getBackgroundColor() const;
     void setBackgroundColor(Color color);
 
+    // Re-render pages if document zoom differs from the last render zoom by the given threshold.
+    double getPDFPageRerenderThreshold() const;
+    void setPDFPageRerenderThreshold(double threshold);
+
+    double getTouchZoomStartThreshold() const;
+    void setTouchZoomStartThreshold(double threshold);
+
     int getPdfPageCacheSize() const;
-    void setPdfPageCacheSize(int size);
+    [[maybe_unused]] void setPdfPageCacheSize(int size);
+
+    unsigned int getPreloadPagesBefore() const;
+    void setPreloadPagesBefore(unsigned int n);
+
+    unsigned int getPreloadPagesAfter() const;
+    void setPreloadPagesAfter(unsigned int n);
+
+    bool isEagerPageCleanup() const;
+    void setEagerPageCleanup(bool b);
 
     string const& getPageTemplate() const;
     void setPageTemplate(const string& pageTemplate);
@@ -431,7 +454,6 @@ public:
      */
     bool getTrySelectOnStrokeFiltered() const;
 
-
     /**
      * Set snap recognized shapes enabled
      */
@@ -452,6 +474,15 @@ public:
      */
     bool getRestoreLineWidthEnabled() const;
 
+    /**
+     * Set the preferred locale
+     */
+    void setPreferredLocale(std::string const& locale);
+
+    /**
+     * Get the preferred locale
+     */
+    std::string getPreferredLocale() const;
 
 public:
     // Custom settings
@@ -490,6 +521,12 @@ private:
      *  Use pen pressure to control stroke width?
      */
     bool pressureSensitivity{};
+
+    /**
+     * Adjust input pressure?
+     */
+    double minimumPressure{};
+    double pressureMultiplier{};
 
     /**
      * If the touch zoom gestures are enabled
@@ -751,6 +788,19 @@ private:
     int pdfPageCacheSize{};
 
     /**
+     *  Percentage by which the page's zoom must change
+     * for PDF pages to re-render while zooming.
+     */
+    double pageRerenderThreshold{};
+
+    /**
+     * Don't start zooming with touch until the difference in distances between the
+     * current touch points and the original is greater than this percentage of the
+     * original distance.
+     */
+    double touchZoomStartThreshold{};
+
+    /**
      * The color to draw borders on selected elements
      * (Page, insert image selection etc.)
      */
@@ -799,6 +849,15 @@ private:
      * Do not use GTK Scrolling / Touch handling
      */
     bool touchWorkaround{};
+
+    // Touchscreens act like multi-touch-aware pens.
+    bool touchDrawing{};
+
+    /**
+     * Infer pressure from speed when device pressure
+     * is unavailable (e.g. drawing with a mouse).
+     */
+    bool pressureGuessing{};
 
     /**
      * The index of the audio device used for recording
@@ -882,4 +941,23 @@ private:
      * "Transaction" running, do not save until the end is reached
      */
     bool inTransaction{};
+
+    /** The preferred locale as its language code
+     * e.g. "en_US"
+     */
+    std::string preferredLocale;
+    /**
+     * The number of pages to pre-load before the current page.
+     */
+    unsigned int preloadPagesBefore{};
+
+    /**
+     * The number of pages to pre-load after the current page.
+     */
+    unsigned int preloadPagesAfter{};
+
+    /**
+     * Whether to evict from the page buffer cache when scrolling.
+     */
+    bool eagerPageCleanup{};
 };

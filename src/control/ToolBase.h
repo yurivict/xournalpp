@@ -26,11 +26,6 @@ public:
     ToolBase();
     virtual ~ToolBase();
 
-    /**
-     * Apply data from another ToolBase or any extending class
-     */
-    void applyFrom(const ToolBase* t);
-
 private:
     void operator=(const ToolBase& t);
     ToolBase(const ToolBase& t);
@@ -65,6 +60,20 @@ public:
      * @param drawingType Draw special shape
      */
     void setDrawingType(DrawingType drawingType);
+
+    /**
+     * @brief Get the Eraser Type object
+     *
+     * @return EraserType
+     */
+    EraserType getEraserType() const;
+
+    /**
+     * @brief Set the Eraser Type object
+     *
+     * @param eraserType
+     */
+    void setEraserType(EraserType eraserType);
 
     /**
      * @return Fill of the shape is enabled
@@ -111,6 +120,11 @@ private:
      * Draw special shape
      */
     DrawingType drawingType = DRAWING_TYPE_DEFAULT;
+
+    /**
+     * Eraser type
+     */
+    EraserType eraserType = ERASER_TYPE_DEFAULT;
 
     /**
      * Fill of the shape is enabled

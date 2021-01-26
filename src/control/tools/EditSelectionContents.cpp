@@ -18,6 +18,7 @@
 #include "undo/FillUndoAction.h"
 #include "undo/FontUndoAction.h"
 #include "undo/InsertUndoAction.h"
+#include "undo/LineStyleUndoAction.h"
 #include "undo/MoveUndoAction.h"
 #include "undo/RotateUndoAction.h"
 #include "undo/ScaleUndoAction.h"
@@ -62,16 +63,31 @@ void EditSelectionContents::addElement(Element* e, Layer::ElementIndex order) {
     }
 }
 
+void EditSelectionContents::replaceInsertOrder(std::deque<std::pair<Element*, Layer::ElementIndex>> newInsertOrder) {
+    this->selected.clear();
+    this->selected.reserve(newInsertOrder.size());
+    std::transform(begin(newInsertOrder), end(newInsertOrder), std::back_inserter(this->selected),
+                   [](auto const& e) { return e.first; });
+    this->insertOrder = std::move(newInsertOrder);
+}
+
 /**
- * Returns all containig elements of this selections
+ * Returns all containing elements of this selection
  */
 auto EditSelectionContents::getElements() -> vector<Element*>* { return &this->selected; }
+
+/**
+ * Returns the insert order of this selection
+ */
+auto EditSelectionContents::getInsertOrder() const -> std::deque<std::pair<Element*, Layer::ElementIndex>> const& {
+    return this->insertOrder;
+}
 
 /**
  * Sets the tool size for pen or eraser, returs an undo action
  * (or nullptr if nothing is done)
  */
-auto EditSelectionContents::setSize(ToolSize size, const double* thicknessPen, const double* thicknessHilighter,
+auto EditSelectionContents::setSize(ToolSize size, const double* thicknessPen, const double* thicknessHighlighter,
                                     const double* thicknessEraser) -> UndoAction* {
     auto* undo = new SizeUndoAction(this->sourcePage, this->sourceLayer);
 
@@ -90,7 +106,7 @@ auto EditSelectionContents::setSize(ToolSize size, const double* thicknessPen, c
             if (tool == STROKE_TOOL_PEN) {
                 s->setWidth(thicknessPen[size]);
             } else if (tool == STROKE_TOOL_HIGHLIGHTER) {
-                s->setWidth(thicknessHilighter[size]);
+                s->setWidth(thicknessHighlighter[size]);
             } else if (tool == STROKE_TOOL_ERASER) {
                 s->setWidth(thicknessEraser[size]);
             }
@@ -218,6 +234,37 @@ auto EditSelectionContents::setFont(XojFont& font) -> UndoAction* {
 }
 
 /**
+ * Set the line style of all strokes, return an undo action
+ * (Or nullptr if nothing done)
+ */
+auto EditSelectionContents::setLineStyle(LineStyle style) -> UndoActionPtr {
+    auto undo = std::make_unique<LineStyleUndoAction>(this->sourcePage, this->sourceLayer);
+
+    bool found = false;
+
+    for (Element* e: this->selected) {
+        if (e->getType() == ELEMENT_STROKE) {
+            auto s = static_cast<Stroke*>(e);
+            auto lastLineStyle = s->getLineStyle();
+            s->setLineStyle(style);
+            undo->addStroke(s, lastLineStyle, s->getLineStyle());
+
+            found = true;
+        }
+    }
+
+    if (found) {
+        this->deleteViewBuffer();
+        this->sourceView->getXournal()->repaintSelection();
+
+        return undo;
+    }
+
+
+    return {};
+}
+
+/**
  * Set the color of all elements, return an undo action
  * (Or nullptr if nothing done, e.g. because there is only an image)
  */
@@ -290,16 +337,6 @@ void EditSelectionContents::deleteViewBuffer() {
         this->crBuffer = nullptr;
     }
 }
-
-/**
- * Gets the original width of the contents
- */
-auto EditSelectionContents::getOriginalWidth() const -> double { return this->originalBounds.width; }
-
-/**
- * Gets the original height of the contents
- */
-auto EditSelectionContents::getOriginalHeight() const -> double { return this->originalBounds.height; }
 
 /**
  * The contents of the selection
@@ -508,11 +545,10 @@ auto EditSelectionContents::copySelection(PageRef page, XojPageView* view, doubl
 void EditSelectionContents::serialize(ObjectOutputStream& out) {
     out.writeObject("EditSelectionContents");
 
-    out.writeDouble(this->originalBounds.width);
-    out.writeDouble(this->originalBounds.height);
-
     out.writeDouble(this->originalBounds.x);
     out.writeDouble(this->originalBounds.y);
+    out.writeDouble(this->originalBounds.width);
+    out.writeDouble(this->originalBounds.height);
 
     out.writeDouble(this->relativeX);
     out.writeDouble(this->relativeY);
@@ -523,13 +559,11 @@ void EditSelectionContents::serialize(ObjectOutputStream& out) {
 void EditSelectionContents::readSerialized(ObjectInputStream& in) {
     in.readObject("EditSelectionContents");
 
-    double originalWidth = in.readDouble();
-    double originalHeight = in.readDouble();
-
     double originalX = in.readDouble();
     double originalY = in.readDouble();
-
-    this->originalBounds = Rectangle<double>{originalX, originalY, originalWidth, originalHeight};
+    double originalW = in.readDouble();
+    double originalH = in.readDouble();
+    this->originalBounds = Rectangle<double>{originalX, originalY, originalW, originalH};
 
     this->relativeX = in.readDouble();
     this->relativeY = in.readDouble();

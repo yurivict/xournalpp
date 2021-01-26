@@ -1,21 +1,16 @@
 #include "Control.h"
 
 #include <ctime>
-#include <fstream>
 #include <memory>
 #include <numeric>
-#include <sstream>
-#include <utility>
 
-#include <gio/gio.h>
 #include <glib/gstdio.h>
-#include <gtk/gtk.h>
 
 #include "gui/TextEditor.h"
 #include "gui/XournalView.h"
 #include "gui/XournalppCursor.h"
 #include "gui/dialog/AboutDialog.h"
-#include "gui/dialog/FillTransparencyDialog.h"
+#include "gui/dialog/FillOpacityDialog.h"
 #include "gui/dialog/FormatDialog.h"
 #include "gui/dialog/GotoDialog.h"
 #include "gui/dialog/PageTemplateDialog.h"
@@ -24,30 +19,24 @@
 #include "gui/dialog/ToolbarManageDialog.h"
 #include "gui/dialog/toolbarCustomize/ToolbarDragDropHandler.h"
 #include "gui/inputdevices/HandRecognition.h"
-#include "gui/toolbarMenubar/ToolMenuHandler.h"
 #include "gui/toolbarMenubar/model/ToolbarData.h"
 #include "gui/toolbarMenubar/model/ToolbarModel.h"
 #include "jobs/AutosaveJob.h"
-#include "jobs/BlockingJob.h"
 #include "jobs/CustomExportJob.h"
 #include "jobs/PdfExportJob.h"
 #include "jobs/SaveJob.h"
 #include "layer/LayerController.h"
-#include "model/BackgroundImage.h"
-#include "model/FormatDefinitions.h"
 #include "model/StrokeStyle.h"
-#include "model/XojPage.h"
 #include "pagetype/PageTypeHandler.h"
-#include "pagetype/PageTypeMenu.h"
 #include "plugin/PluginController.h"
 #include "serializing/ObjectInputStream.h"
 #include "settings/ButtonConfig.h"
+#include "settings/SettingsEnums.h"
 #include "stockdlg/XojOpenDlg.h"
 #include "undo/AddUndoAction.h"
 #include "undo/DeleteUndoAction.h"
 #include "undo/InsertDeletePageUndoAction.h"
 #include "undo/InsertUndoAction.h"
-#include "view/DocumentView.h"
 #include "view/TextView.h"
 #include "xojfile/LoadHandler.h"
 
@@ -63,12 +52,11 @@
 #include "Util.h"
 #include "XojMsgBox.h"
 #include "config-dev.h"
-#include "config-features.h"
 #include "config.h"
 #include "i18n.h"
 
 
-Control::Control(GladeSearchpath* gladeSearchPath) {
+Control::Control(GApplication* gtkApp, GladeSearchpath* gladeSearchPath): gtkApp(gtkApp) {
     this->recent = new RecentManager();
     this->undoRedo = new UndoRedoHandler(this);
     this->recent->addListener(this);
@@ -87,6 +75,8 @@ Control::Control(GladeSearchpath* gladeSearchPath) {
     auto name = Util::getConfigFile(SETTINGS_XML_FILE);
     this->settings = new Settings(std::move(name));
     this->settings->load();
+
+    this->applyPreferredLanguage();
 
     TextView::setDpi(settings->getDisplayDpi());
 
@@ -111,6 +101,7 @@ Control::Control(GladeSearchpath* gladeSearchPath) {
 
     this->toolHandler = new ToolHandler(this, this, this->settings);
     this->toolHandler->loadSettings();
+    this->initButtonTool();
 
     /**
      * This is needed to update the previews
@@ -133,9 +124,7 @@ Control::~Control() {
     this->enableAutosave(false);
 
     deleteLastAutosaveFile("");
-
     this->scheduler->stop();
-
     this->changedPages.clear();  // can be removed, will be done by implicit destructor
 
     delete this->pluginController;
@@ -182,6 +171,7 @@ Control::~Control() {
     this->fullscreenHandler = nullptr;
 }
 
+
 void Control::renameLastAutosaveFile() {
     if (this->lastAutosaveFilename.empty()) {
         return;
@@ -211,7 +201,7 @@ void Control::renameLastAutosaveFile() {
         Util::safeRenameFile(filename, renamed);
     } catch (fs::filesystem_error const& e) {
         auto fmtstr = _F("Could not rename autosave file from \"{1}\" to \"{2}\": {3}");
-        errors.emplace_back(FS(fmtstr % filename.string() % renamed.string() % e.what()));
+        errors.emplace_back(FS(fmtstr % filename.u8string() % renamed.u8string() % e.what()));
     }
 
 
@@ -298,7 +288,7 @@ void Control::initWindow(MainWindow* win) {
 
     penSizeChanged();
     eraserSizeChanged();
-    hilighterSizeChanged();
+    highlighterSizeChanged();
     updateDeletePageButton();
     toolFillChanged();
     toolLineStyleChanged();
@@ -310,6 +300,8 @@ void Control::initWindow(MainWindow* win) {
     win->setFontButtonFont(settings->getFont());
 
     this->pluginController->registerMenu();
+
+    win->rebindMenubarAccelerators();
 
     fireActionSelected(GROUP_SNAPPING, settings->isSnapRotation() ? ACTION_ROTATION_SNAPPING : ACTION_NONE);
     fireActionSelected(GROUP_GRID_SNAPPING, settings->isSnapGrid() ? ACTION_GRID_SNAPPING : ACTION_NONE);
@@ -464,6 +456,9 @@ void Control::actionPerformed(ActionType type, ActionGroup group, GdkEvent* even
         case ACTION_NEW_PAGE_AFTER:
             insertNewPage(getCurrentPageNo() + 1);
             break;
+        case ACTION_APPEND_NEW_PDF_PAGES:
+            appendNewPdfPages();
+            break;
         case ACTION_NEW_PAGE_AT_END:
             insertNewPage(this->doc->getPageCount());
             break;
@@ -510,10 +505,10 @@ void Control::actionPerformed(ActionType type, ActionGroup group, GdkEvent* even
             }
             break;
 
-        case ACTION_TOOL_HILIGHTER:
+        case ACTION_TOOL_HIGHLIGHTER:
             clearSelection();
             if (enabled) {
-                selectTool(TOOL_HILIGHTER);
+                selectTool(TOOL_HIGHLIGHTER);
             }
             break;
         case ACTION_TOOL_TEXT:
@@ -686,45 +681,45 @@ void Control::actionPerformed(ActionType type, ActionGroup group, GdkEvent* even
         case ACTION_TOOL_PEN_FILL:
             this->toolHandler->setPenFillEnabled(enabled);
             break;
-        case ACTION_TOOL_PEN_FILL_TRANSPARENCY:
+        case ACTION_TOOL_PEN_FILL_OPACITY:
             selectFillAlpha(true);
             break;
 
 
-        case ACTION_TOOL_HILIGHTER_SIZE_VERY_FINE:
+        case ACTION_TOOL_HIGHLIGHTER_SIZE_VERY_FINE:
             if (enabled) {
-                this->toolHandler->setHilighterSize(TOOL_SIZE_VERY_FINE);
-                hilighterSizeChanged();
+                this->toolHandler->setHighlighterSize(TOOL_SIZE_VERY_FINE);
+                highlighterSizeChanged();
             }
             break;
-        case ACTION_TOOL_HILIGHTER_SIZE_FINE:
+        case ACTION_TOOL_HIGHLIGHTER_SIZE_FINE:
             if (enabled) {
-                this->toolHandler->setHilighterSize(TOOL_SIZE_FINE);
-                hilighterSizeChanged();
+                this->toolHandler->setHighlighterSize(TOOL_SIZE_FINE);
+                highlighterSizeChanged();
             }
             break;
-        case ACTION_TOOL_HILIGHTER_SIZE_MEDIUM:
+        case ACTION_TOOL_HIGHLIGHTER_SIZE_MEDIUM:
             if (enabled) {
-                this->toolHandler->setHilighterSize(TOOL_SIZE_MEDIUM);
-                hilighterSizeChanged();
+                this->toolHandler->setHighlighterSize(TOOL_SIZE_MEDIUM);
+                highlighterSizeChanged();
             }
             break;
-        case ACTION_TOOL_HILIGHTER_SIZE_THICK:
+        case ACTION_TOOL_HIGHLIGHTER_SIZE_THICK:
             if (enabled) {
-                this->toolHandler->setHilighterSize(TOOL_SIZE_THICK);
-                hilighterSizeChanged();
+                this->toolHandler->setHighlighterSize(TOOL_SIZE_THICK);
+                highlighterSizeChanged();
             }
             break;
-        case ACTION_TOOL_HILIGHTER_SIZE_VERY_THICK:
+        case ACTION_TOOL_HIGHLIGHTER_SIZE_VERY_THICK:
             if (enabled) {
-                this->toolHandler->setHilighterSize(TOOL_SIZE_VERY_THICK);
-                hilighterSizeChanged();
+                this->toolHandler->setHighlighterSize(TOOL_SIZE_VERY_THICK);
+                highlighterSizeChanged();
             }
             break;
-        case ACTION_TOOL_HILIGHTER_FILL:
-            this->toolHandler->setHilighterFillEnabled(enabled);
+        case ACTION_TOOL_HIGHLIGHTER_FILL:
+            this->toolHandler->setHighlighterFillEnabled(enabled);
             break;
-        case ACTION_TOOL_HILIGHTER_FILL_TRANSPARENCY:
+        case ACTION_TOOL_HIGHLIGHTER_FILL_OPACITY:
             selectFillAlpha(false);
             break;
 
@@ -973,10 +968,10 @@ void Control::selectFillAlpha(bool pen) {
     if (pen) {
         alpha = toolHandler->getPenFill();
     } else {
-        alpha = toolHandler->getHilighterFill();
+        alpha = toolHandler->getHighlighterFill();
     }
 
-    FillTransparencyDialog dlg(gladeSearchPath, alpha);
+    FillOpacityDialog dlg(gladeSearchPath, alpha);
     dlg.show(getGtkWindow());
 
     if (dlg.getResultAlpha() == -1) {
@@ -988,7 +983,7 @@ void Control::selectFillAlpha(bool pen) {
     if (pen) {
         toolHandler->setPenFill(alpha);
     } else {
-        toolHandler->setHilighterFill(alpha);
+        toolHandler->setHighlighterFill(alpha);
     }
 }
 
@@ -1218,20 +1213,56 @@ void Control::deletePage() {
 
 void Control::insertNewPage(size_t position) { pageBackgroundChangeController->insertNewPage(position); }
 
+void Control::appendNewPdfPages() {
+    auto pageCount = this->doc->getPageCount();
+    // find last page with pdf background and get its pdf page number
+    auto currentPdfPageCount = [&]() {
+        for (size_t i = pageCount; i != 0; --i) {
+            if (auto page = doc->getPage(i - 1); page && page->getBackgroundType().isPdfPage()) {
+                return page->getPdfPageNr() + 1;
+            }
+        }
+        return size_t{0U};
+    }();
+
+    auto pdfPageCount = this->doc->getPdfPageCount();
+    auto insertCount = pdfPageCount - currentPdfPageCount;
+
+    if (insertCount == 0) {
+        string msg = FS(_F("No pdf pages available to append. You may need to reopen the document first."));
+        XojMsgBox::showErrorToUser(getGtkWindow(), msg);
+    }
+    for (size_t i = 0; i != insertCount; ++i) {
+
+        doc->lock();
+        XojPdfPageSPtr pdf = doc->getPdfPage(currentPdfPageCount + i);
+        doc->unlock();
+
+        if (pdf) {
+            auto newPage = std::make_shared<XojPage>(pdf->getWidth(), pdf->getHeight());
+            newPage->setBackgroundPdfPageNr(currentPdfPageCount + i);
+            insertPage(newPage, pageCount + i);
+        } else {
+            string msg = FS(_F("Unable to retrieve pdf page."));  // should not happen
+            XojMsgBox::showErrorToUser(getGtkWindow(), msg);
+        }
+    }
+}
+
 void Control::insertPage(const PageRef& page, size_t position) {
     this->doc->lock();
-    this->doc->insertPage(page, position);
+    this->doc->insertPage(page, position);  // insert the new page to the document and update page numbers
     this->doc->unlock();
+
+    // notify document listeners about the inserted page; this creates the new XojViewPage, recalculates the layout
+    // and creates a preview page in the sidebar
     firePageInserted(position);
 
     getCursor()->updateCursor();
 
-    int visibleHeight = 0;
-    scrollHandler->isPageVisible(position, &visibleHeight);
-
-    if (visibleHeight < 10) {
-        Util::execInUiThread([=]() { scrollHandler->scrollToPage(position); });
-    }
+    // make the inserted page fully visible (or at least as much from the top which fits on the screen),
+    // and make the page appear selected
+    scrollHandler->scrollToPage(position);
     firePageSelected(position);
 
     updateDeletePageButton();
@@ -1592,14 +1623,13 @@ void Control::undoRedoChanged() {
 
 void Control::undoRedoPageChanged(PageRef page) {
     if (std::find(begin(this->changedPages), end(this->changedPages), page) == end(this->changedPages)) {
-        return;
+        this->changedPages.emplace_back(std::move(page));
     }
-
-    this->changedPages.emplace_back(std::move(page));
 }
 
 void Control::selectTool(ToolType type) {
     toolHandler->selectTool(type);
+    toolHandler->fireToolChanged();
 
     if (win) {
         (win->getXournal()->getViewFor(getCurrentPageNo()))->rerenderPage();
@@ -1607,8 +1637,8 @@ void Control::selectTool(ToolType type) {
 }
 
 void Control::selectDefaultTool() {
-    ButtonConfig* cfg = settings->getDefaultButtonConfig();
-    cfg->acceptActions(toolHandler);
+    ButtonConfig* cfg = settings->getButtonConfig(Button::BUTTON_DEFAULT);
+    cfg->applyConfigToToolbarTool(toolHandler);
 }
 
 void Control::toolChanged() {
@@ -1631,25 +1661,24 @@ void Control::toolChanged() {
     fireEnableAction(ACTION_SHAPE_RECOGNIZER, toolHandler->hasCapability(TOOL_CAP_RECOGNIZER));
 
     bool enableSize = toolHandler->hasCapability(TOOL_CAP_SIZE);
-
     fireEnableAction(ACTION_SIZE_MEDIUM, enableSize);
     fireEnableAction(ACTION_SIZE_THICK, enableSize);
     fireEnableAction(ACTION_SIZE_FINE, enableSize);
     fireEnableAction(ACTION_SIZE_VERY_THICK, enableSize);
     fireEnableAction(ACTION_SIZE_VERY_FINE, enableSize);
-
-    bool enableFill = toolHandler->hasCapability(TOOL_CAP_FILL);
-
-    fireEnableAction(ACTION_TOOL_FILL, enableFill);
-
-
     if (enableSize) {
         toolSizeChanged();
     }
 
+    bool enableFill = toolHandler->hasCapability(TOOL_CAP_FILL);
+    fireEnableAction(ACTION_TOOL_FILL, enableFill);
+    if (enableFill) {
+        toolFillChanged();
+    }
+
     // Update color
     if (toolHandler->hasCapability(TOOL_CAP_COLOR)) {
-        toolColorChanged(false);
+        toolColorChanged();
     }
 
     ActionType rulerAction = ACTION_NOT_SELECTED;
@@ -1724,22 +1753,22 @@ void Control::penSizeChanged() {
     }
 }
 
-void Control::hilighterSizeChanged() {
-    switch (toolHandler->getHilighterSize()) {
+void Control::highlighterSizeChanged() {
+    switch (toolHandler->getHighlighterSize()) {
         case TOOL_SIZE_VERY_FINE:
-            fireActionSelected(GROUP_HILIGHTER_SIZE, ACTION_TOOL_HILIGHTER_SIZE_VERY_FINE);
+            fireActionSelected(GROUP_HIGHLIGHTER_SIZE, ACTION_TOOL_HIGHLIGHTER_SIZE_VERY_FINE);
             break;
         case TOOL_SIZE_FINE:
-            fireActionSelected(GROUP_HILIGHTER_SIZE, ACTION_TOOL_HILIGHTER_SIZE_FINE);
+            fireActionSelected(GROUP_HIGHLIGHTER_SIZE, ACTION_TOOL_HIGHLIGHTER_SIZE_FINE);
             break;
         case TOOL_SIZE_MEDIUM:
-            fireActionSelected(GROUP_HILIGHTER_SIZE, ACTION_TOOL_HILIGHTER_SIZE_MEDIUM);
+            fireActionSelected(GROUP_HIGHLIGHTER_SIZE, ACTION_TOOL_HIGHLIGHTER_SIZE_MEDIUM);
             break;
         case TOOL_SIZE_THICK:
-            fireActionSelected(GROUP_HILIGHTER_SIZE, ACTION_TOOL_HILIGHTER_SIZE_THICK);
+            fireActionSelected(GROUP_HIGHLIGHTER_SIZE, ACTION_TOOL_HIGHLIGHTER_SIZE_THICK);
             break;
         case TOOL_SIZE_VERY_THICK:
-            fireActionSelected(GROUP_HILIGHTER_SIZE, ACTION_TOOL_HILIGHTER_SIZE_VERY_THICK);
+            fireActionSelected(GROUP_HIGHLIGHTER_SIZE, ACTION_TOOL_HIGHLIGHTER_SIZE_VERY_THICK);
             break;
         default:
             break;
@@ -1751,8 +1780,8 @@ void Control::toolSizeChanged() {
         penSizeChanged();
     } else if (toolHandler->getToolType() == TOOL_ERASER) {
         eraserSizeChanged();
-    } else if (toolHandler->getToolType() == TOOL_HILIGHTER) {
-        hilighterSizeChanged();
+    } else if (toolHandler->getToolType() == TOOL_HIGHLIGHTER) {
+        highlighterSizeChanged();
     }
 
     switch (toolHandler->getSize()) {
@@ -1782,8 +1811,8 @@ void Control::toolSizeChanged() {
 void Control::toolFillChanged() {
     fireActionSelected(GROUP_FILL, toolHandler->getFill() != -1 ? ACTION_TOOL_FILL : ACTION_NONE);
     fireActionSelected(GROUP_PEN_FILL, toolHandler->getPenFillEnabled() ? ACTION_TOOL_PEN_FILL : ACTION_NONE);
-    fireActionSelected(GROUP_HILIGHTER_FILL,
-                       toolHandler->getHilighterFillEnabled() ? ACTION_TOOL_HILIGHTER_FILL : ACTION_NONE);
+    fireActionSelected(GROUP_HIGHLIGHTER_FILL,
+                       toolHandler->getHighlighterFillEnabled() ? ACTION_TOOL_HIGHLIGHTER_FILL : ACTION_NONE);
 }
 
 void Control::toolLineStyleChanged() {
@@ -1801,19 +1830,14 @@ void Control::toolLineStyleChanged() {
     }
 }
 
-/**
- * Select the color for the tool
- *
- * @param userSelection
- * 			true if the user selected the color
- * 			false if the color is selected by a tool change
- * 			and therefore should not be applied to a selection
- */
-void Control::toolColorChanged(bool userSelection) {
+
+void Control::toolColorChanged() {
     fireActionSelected(GROUP_COLOR, ACTION_SELECT_COLOR);
     getCursor()->updateCursor();
+}
 
-    if (userSelection && this->win && toolHandler->getColor() != Color(-1)) {
+void Control::changeColorOfSelection() {
+    if (this->win && toolHandler->hasCapability(TOOL_CAP_COLOR)) {
         EditSelection* sel = this->win->getXournal()->getSelection();
         if (sel) {
             UndoAction* undo = sel->setColor(toolHandler->getColor());
@@ -1977,7 +2001,7 @@ auto Control::openFile(fs::path filepath, int scrollToPage, bool forceOpen) -> b
     }
 
     if (!loadedDocument) {
-        string msg = FS(_F("Error opening file \"{1}\"") % filepath.string()) + "\n" + loadHandler.getLastError();
+        string msg = FS(_F("Error opening file \"{1}\"") % filepath.u8string()) + "\n" + loadHandler.getLastError();
         XojMsgBox::showErrorToUser(getGtkWindow(), msg);
 
         fileLoaded(scrollToPage);
@@ -2156,7 +2180,7 @@ auto Control::annotatePdf(fs::path filepath, bool /*attachPdf*/, bool attachToDo
         string errMsg = doc->getLastErrorMsg();
         this->doc->unlock();
 
-        string msg = FS(_F("Error annotate PDF file \"{1}\"\n{2}") % filepath.string() % errMsg);
+        string msg = FS(_F("Error annotate PDF file \"{1}\"\n{2}") % filepath.u8string() % errMsg);
         XojMsgBox::showErrorToUser(getGtkWindow(), msg);
     }
     getCursor()->setCursorBusy(false);
@@ -2258,13 +2282,13 @@ auto Control::showSaveDialog() -> bool {
 
     this->doc->lock();
     auto suggested_folder = this->doc->createSaveFolder(this->settings->getLastSavePath());
-    fs::path suggested_name = this->doc->createSaveFilename(Document::XOPP, this->settings->getDefaultSaveName());
+    auto suggested_name = this->doc->createSaveFilename(Document::XOPP, this->settings->getDefaultSaveName());
     this->doc->unlock();
 
-    gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(dialog), suggested_folder.u8string().c_str());
-    gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), suggested_name.u8string().c_str());
-    gtk_file_chooser_add_shortcut_folder(GTK_FILE_CHOOSER(dialog), this->settings->getLastOpenPath().u8string().c_str(),
-                                         nullptr);
+    gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(dialog), Util::toGFilename(suggested_folder).c_str());
+    gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), Util::toGFilename(suggested_name).c_str());
+    gtk_file_chooser_add_shortcut_folder(GTK_FILE_CHOOSER(dialog),
+                                         Util::toGFilename(this->settings->getLastOpenPath()).c_str(), nullptr);
 
     gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(dialog), false);  // handled below
 
@@ -2276,7 +2300,7 @@ auto Control::showSaveDialog() -> bool {
             return false;
         }
 
-        auto fileTmp = Util::fromGtkFilename(gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog)));
+        auto fileTmp = Util::fromGFilename(gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog)));
         Util::clearExtensions(fileTmp);
         fileTmp += ".xopp";
         // Since we add the extension after the OK button, we have to check manually on existing files
@@ -2285,7 +2309,7 @@ auto Control::showSaveDialog() -> bool {
         }
     }
 
-    auto filename = Util::fromGtkFilename(gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog)));
+    auto filename = Util::fromGFilename(gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog)));
     settings->setLastSavePath(filename.parent_path());
     gtk_widget_destroy(dialog);
 
@@ -2308,14 +2332,14 @@ void Control::updateWindowTitle() {
             if (undoRedo->isChanged()) {
                 title += "*";
             }
-            title += doc->getPdfFilepath().filename().string();
+            title += doc->getPdfFilepath().filename().u8string();
         }
     } else {
         if (undoRedo->isChanged()) {
             title += "*";
         }
 
-        title += doc->getFilepath().filename().string();
+        title += doc->getFilepath().filename().u8string();
     }
     this->doc->unlock();
 
@@ -2392,7 +2416,7 @@ void Control::quit(bool allowCancel) {
 
     this->scheduler->removeAllJobs();
     this->scheduler->unlock();
-    gtk_main_quit();
+    g_application_quit(G_APPLICATION(gtkApp));
 }
 
 auto Control::close(const bool allowDestroy, const bool allowCancel) -> bool {
@@ -2441,13 +2465,6 @@ auto Control::close(const bool allowDestroy, const bool allowCancel) -> bool {
     return true;
 }
 
-auto Control::closeAndDestroy(bool allowCancel) -> bool {
-    // We don't want to "double close", so disallow it first.
-    auto retval = this->close(false, allowCancel);
-    this->closeDocument();
-    return retval;
-}
-
 void Control::closeDocument() {
     this->undoRedo->clearContents();
 
@@ -2458,10 +2475,28 @@ void Control::closeDocument() {
     this->undoRedoChanged();
 }
 
+void Control::applyPreferredLanguage() {
+#ifdef _WIN32
+    _putenv_s("LANGUAGE", this->settings->getPreferredLocale().c_str());
+#else
+    setenv("LANGUAGE", this->settings->getPreferredLocale().c_str(), 1);
+#endif
+}
+
+void Control::initButtonTool() {
+    vector<Button> buttons{Button::BUTTON_ERASER,       Button::BUTTON_STYLUS_ONE,  Button::BUTTON_STYLUS_TWO,
+                           Button::BUTTON_MOUSE_MIDDLE, Button::BUTTON_MOUSE_RIGHT, Button::BUTTON_TOUCH};
+    ButtonConfig* cfg;
+    for (auto b: buttons) {
+        cfg = settings->getButtonConfig(b);
+        cfg->initButton(this->toolHandler, b);
+    }
+}
+
 auto Control::askToReplace(fs::path const& filepath) const -> bool {
     if (fs::exists(filepath)) {
         string msg = FS(FORMAT_STR("The file {1} already exists! Do you want to replace it?") %
-                        filepath.filename().string());
+                        filepath.filename().u8string());
         int res = XojMsgBox::replaceFileQuestion(getGtkWindow(), msg);
         return res == GTK_RESPONSE_OK;
     }
@@ -2690,15 +2725,15 @@ void Control::setFill(bool fill) {
 
     if (sel) {
         undoRedo->addUndoAction(UndoActionPtr(
-                sel->setFill(fill ? toolHandler->getPenFill() : -1, fill ? toolHandler->getHilighterFill() : -1)));
+                sel->setFill(fill ? toolHandler->getPenFill() : -1, fill ? toolHandler->getHighlighterFill() : -1)));
     }
 
     if (toolHandler->getToolType() == TOOL_PEN) {
         fireActionSelected(GROUP_PEN_FILL, fill ? ACTION_TOOL_PEN_FILL : ACTION_NONE);
         this->toolHandler->setPenFillEnabled(fill, false);
-    } else if (toolHandler->getToolType() == TOOL_HILIGHTER) {
-        fireActionSelected(GROUP_HILIGHTER_FILL, fill ? ACTION_TOOL_HILIGHTER_FILL : ACTION_NONE);
-        this->toolHandler->setHilighterFillEnabled(fill, false);
+    } else if (toolHandler->getToolType() == TOOL_HIGHLIGHTER) {
+        fireActionSelected(GROUP_HIGHLIGHTER_FILL, fill ? ACTION_TOOL_HIGHLIGHTER_FILL : ACTION_NONE);
+        this->toolHandler->setHighlighterFillEnabled(fill, false);
     }
 }
 
@@ -2710,12 +2745,8 @@ void Control::setLineStyle(const string& style) {
         sel = this->win->getXournal()->getSelection();
     }
 
-    // TODO(fabian): allow to change selection
     if (sel) {
-        //		UndoAction* undo = sel->setSize(size, toolHandler->getToolThickness(TOOL_PEN),
-        //										toolHandler->getToolThickness(TOOL_HILIGHTER),
-        //										toolHandler->getToolThickness(TOOL_ERASER));
-        //		undoRedo->addUndoAction(undo);
+        undoRedo->addUndoAction(sel->setLineStyle(stl));
     }
 
     this->toolHandler->setLineStyle(stl);
@@ -2729,7 +2760,7 @@ void Control::setToolSize(ToolSize size) {
 
     if (sel) {
         undoRedo->addUndoAction(UndoActionPtr(sel->setSize(size, toolHandler->getToolThickness(TOOL_PEN),
-                                                           toolHandler->getToolThickness(TOOL_HILIGHTER),
+                                                           toolHandler->getToolThickness(TOOL_HIGHLIGHTER),
                                                            toolHandler->getToolThickness(TOOL_ERASER))));
     }
     this->toolHandler->setSize(size);
@@ -2770,8 +2801,6 @@ auto Control::getUndoRedoHandler() -> UndoRedoHandler* { return this->undoRedo; 
 auto Control::getZoomControl() -> ZoomControl* { return this->zoom; }
 
 auto Control::getCursor() -> XournalppCursor* { return this->cursor; }
-
-auto Control::getRecentManager() -> RecentManager* { return this->recent; }
 
 auto Control::getDocument() -> Document* { return this->doc; }
 

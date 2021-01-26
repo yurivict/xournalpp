@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "gui/XournalppCursor.h"
+#include "gui/inputdevices/InputUtils.h"
 #include "gui/widgets/XournalWidget.h"
 
 #include "InputContext.h"
@@ -167,25 +168,18 @@ void StylusInputHandler::setPressedState(InputEvent const& event) {
 auto StylusInputHandler::changeTool(InputEvent const& event) -> bool {
     Settings* settings = this->inputContext->getSettings();
     ToolHandler* toolHandler = this->inputContext->getToolHandler();
+    bool toolChanged = false;
 
-    ButtonConfig* cfg = nullptr;
-    // Stylus
-    if (event.deviceClass == INPUT_DEVICE_PEN) {
-        if (this->modifier2) {
-            cfg = settings->getStylusButton1Config();
-        } else if (this->modifier3) {
-            cfg = settings->getStylusButton2Config();
-        }
-    } else if (event.deviceClass == INPUT_DEVICE_ERASER) {
-        cfg = settings->getEraserButtonConfig();
-    }
+    if (event.deviceClass == INPUT_DEVICE_PEN && this->modifier2)
+        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_STYLUS_ONE);
+    else if (event.deviceClass == INPUT_DEVICE_PEN && this->modifier3)
+        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_STYLUS_TWO);
+    else if (event.deviceClass == INPUT_DEVICE_ERASER)
+        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_ERASER);
+    else
+        toolChanged = toolHandler->pointActiveToolToToolbarTool();
 
-    if (cfg && cfg->getAction() != TOOL_NONE) {
-        toolHandler->copyCurrentConfig();
-        cfg->acceptActions(toolHandler);
-    } else {
-        toolHandler->restoreLastConfig();
-    }
-
-    return false;
+    if (toolChanged)
+        toolHandler->fireToolChanged();
+    return true;
 }

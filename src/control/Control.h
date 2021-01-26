@@ -14,9 +14,9 @@
 #include <string>
 #include <vector>
 
-#include "../gui/dialog/LatexDialog.h"
 #include "gui/MainWindow.h"
 #include "gui/SearchBar.h"
+#include "gui/dialog/LatexDialog.h"
 #include "gui/sidebar/Sidebar.h"
 #include "jobs/ProgressListener.h"
 #include "jobs/XournalScheduler.h"
@@ -62,7 +62,7 @@ class Control:
         public ClipboardListener,
         public ProgressListener {
 public:
-    Control(GladeSearchpath* gladeSearchPath);
+    Control(GApplication* gtkApp, GladeSearchpath* gladeSearchPath);
     virtual ~Control();
 
     void initWindow(MainWindow* win);
@@ -100,12 +100,6 @@ public:
      */
     bool close(bool allowDestroy = false, bool allowCancel = true);
 
-    /**
-     * Calls close, always forcing the document to be destroyed.
-     * @return The value returned by close
-     */
-    bool closeAndDestroy(bool allowCancel = false);
-
     // Asks user to replace an existing file when saving / exporting, since we add the extension
     // after the OK, we need to check manually
     bool askToReplace(fs::path const& filepath) const;
@@ -125,14 +119,15 @@ public:
                                  GtkToolButton* toolbutton, bool enabled);
 
     /**
-     * Select the color for the tool
+     * @brief Update the Cursor and the Toolbar based on the active color
      *
-     * @param userSelection
-     * 			true if the user selected the color
-     * 			false if the color is selected by a tool change
-     * 			and therefore should not be applied to a selection
      */
-    virtual void toolColorChanged(bool userSelection);
+    virtual void toolColorChanged();
+    /**
+     * @brief Change the color of the current selection based on the active Tool
+     *
+     */
+    virtual void changeColorOfSelection();
     virtual void setCustomColorSelected();
     virtual void toolChanged();
     virtual void toolSizeChanged();
@@ -192,6 +187,7 @@ public:
 
     void addDefaultPage(string pageTemplate);
     void insertNewPage(size_t position);
+    void appendNewPdfPages();
     void insertPage(const PageRef& page, size_t position);
     void deletePage();
 
@@ -239,7 +235,6 @@ public:
     UndoRedoHandler* getUndoRedoHandler();
     MainWindow* getWindow();
     GtkWindow* getGtkWindow() const;
-    RecentManager* getRecentManager();
     ScrollHandler* getScrollHandler();
     PageRef getCurrentPage();
     size_t getCurrentPageNo();
@@ -260,6 +255,13 @@ public:
     void help();
 
     void selectFillAlpha(bool pen);
+
+    /**
+     * @brief Initialize the all button tools based on the respective ButtonConfigs
+     *
+     */
+    void initButtonTool();
+
 
 public:
     // UndoRedoListener interface
@@ -299,7 +301,7 @@ protected:
 
     void eraserSizeChanged();
     void penSizeChanged();
-    void hilighterSizeChanged();
+    void highlighterSizeChanged();
 
     static bool checkChangedDocument(Control* control);
     static bool autosaveCallback(Control* control);
@@ -326,11 +328,16 @@ private:
      */
     void closeDocument();
 
-    RecentManager* recent;
-    UndoRedoHandler* undoRedo;
-    ZoomControl* zoom;
+    /**
+     * Applies the preferred language to the UI
+     */
+    void applyPreferredLanguage();
 
-    Settings* settings;
+    RecentManager* recent = nullptr;
+    UndoRedoHandler* undoRedo = nullptr;
+    ZoomControl* zoom = nullptr;
+
+    Settings* settings = nullptr;
     MainWindow* win = nullptr;
 
     Document* doc = nullptr;
@@ -349,6 +356,8 @@ private:
     AudioController* audioController;
 
     ToolbarDragDropHandler* dragDropHandler = nullptr;
+
+    GApplication* gtkApp = nullptr;
 
     /**
      * The cursor handler

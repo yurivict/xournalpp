@@ -11,6 +11,7 @@
 #include "gui/PageView.h"
 #include "gui/XournalView.h"
 #include "gui/XournalppCursor.h"
+#include "gui/inputdevices/InputUtils.h"
 #include "model/Point.h"
 
 #include "NewGtkInputDevice.h"
@@ -102,7 +103,7 @@ auto InputSequence::getPageAtCurrentPosition() -> XojPageView* {
     double x = this->x + xournal->x;
     double y = this->y + xournal->y;
 
-    return xournal->layout->getViewAt(x, y);
+    return xournal->layout->getPageViewAt(x, y);
 }
 
 /**
@@ -196,6 +197,7 @@ auto InputSequence::actionMoved(guint32 time) -> bool {
  */
 auto InputSequence::actionStart(guint32 time) -> bool {
     this->eventTime = time;
+    bool isEventHandled = false;
 
     inputHandler->focusWidget();
 
@@ -213,16 +215,14 @@ auto InputSequence::actionStart(guint32 time) -> bool {
     }
 
     // Change the tool depending on the key or device
-    if (changeTool()) {
-        return true;
-    }
+    changeTool();
 
     GtkXournal* xournal = inputHandler->getXournal();
 
     // hand tool don't change the selection, so you can scroll e.g.
     // with your touchscreen without remove the selection
-    ToolHandler* h = inputHandler->getToolHandler();
-    if (h->getToolType() == TOOL_HAND) {
+    ToolHandler* toolHandler = inputHandler->getToolHandler();
+    if (toolHandler->getToolType() == TOOL_HAND) {
         XournalppCursor* cursor = xournal->view->getCursor();
         cursor->setMouseDown(true);
         inScrolling = true;
@@ -233,6 +233,7 @@ auto InputSequence::actionStart(guint32 time) -> bool {
         return true;
     }
     if (xournal->selection) {
+        isEventHandled = true;
         EditSelection* selection = xournal->selection;
 
         XojPageView* view = selection->getView();
@@ -248,14 +249,14 @@ auto InputSequence::actionStart(guint32 time) -> bool {
 
             xournal->view->getCursor()->setMouseDown(true);
             xournal->selection->mouseDown(selType, pos.x, pos.y);
-            return true;
+            return isEventHandled;
         }
 
 
         xournal->view->clearSelection();
-        if (changeTool()) {
-            return true;
-        }
+        // stop early to prevent drawing when clicking outside of the selection with the intention of deselecting
+        if (toolHandler->isDrawingTool())
+            return isEventHandled;
     }
 
     XojPageView* pv = getPageAtCurrentPosition();
@@ -270,7 +271,7 @@ auto InputSequence::actionStart(guint32 time) -> bool {
     }
 
     // not handled
-    return false;
+    return isEventHandled;
 }
 
 
@@ -340,7 +341,8 @@ void InputSequence::actionEnd(guint32 time) {
     EditSelection* tmpSelection = xournal->selection;
     xournal->selection = nullptr;
 
-    h->restoreLastConfig();
+    h->pointActiveToolToToolbarTool();
+    h->fireToolChanged();
 
     // we need this workaround so it's possible to select something with the middle button
     if (tmpSelection) {
@@ -387,50 +389,38 @@ void InputSequence::stopInput() {
 
 /**
  * Change the tool according to the device and button
- * @return true to ignore event
  */
 auto InputSequence::changeTool() -> bool {
     Settings* settings = inputHandler->getSettings();
-    ButtonConfig* cfgTouch = settings->getTouchButtonConfig();
-    ToolHandler* h = inputHandler->getToolHandler();
+    ToolHandler* toolHandler = inputHandler->getToolHandler();
+    ButtonConfig* cfgTouch = settings->getButtonConfig(Button::BUTTON_TOUCH);
     GtkXournal* xournal = inputHandler->getXournal();
+    bool toolChanged = false;
 
-    ButtonConfig* cfg = nullptr;
-    if (gdk_device_get_source(device) == GDK_SOURCE_PEN) {
+    if (gdk_device_get_source(device) == GDK_SOURCE_PEN && button == 2) {
         penDevice = true;
-        if (button == 2) {
-            cfg = settings->getStylusButton1Config();
-        } else if (button == 3) {
-            cfg = settings->getStylusButton2Config();
-        }
-    } else if (button == 2 /* Middle Button */ && !xournal->selection) {
-        cfg = settings->getMiddleButtonConfig();
-    } else if (button == 3 /* Right Button */ && !xournal->selection) {
-        cfg = settings->getRightButtonConfig();
+        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_STYLUS_ONE);
+    } else if (gdk_device_get_source(device) == GDK_SOURCE_PEN && button == 3) {
+        penDevice = true;
+        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_STYLUS_TWO);
     } else if (gdk_device_get_source(device) == GDK_SOURCE_ERASER) {
         penDevice = true;
-        cfg = settings->getEraserButtonConfig();
-    } else if (cfgTouch->device == gdk_device_get_name(device)) {
-        cfg = cfgTouch;
-
-        // If an action is defined we do it, even if it's a drawing action...
-        if (cfg->getDisableDrawing() && cfg->getAction() == TOOL_NONE) {
-            ToolType tool = h->getToolType();
-            if (tool == TOOL_PEN || tool == TOOL_ERASER || tool == TOOL_HILIGHTER) {
-                g_message("ignore touchscreen for drawing!\n");
-                return true;
-            }
-        }
-    }
-
-    if (cfg && cfg->getAction() != TOOL_NONE) {
-        h->copyCurrentConfig();
-        cfg->acceptActions(h);
+        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_ERASER);
+    } else if (button == 2 && !xournal->selection) {
+        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_MOUSE_MIDDLE);
+    } else if (button == 3 && !xournal->selection) {
+        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_MOUSE_RIGHT);
+    } else if (gdk_device_get_name(device) == cfgTouch->device) {
+        if (InputUtils::touchDrawingDisallowed(toolHandler, settings))
+            return false;
+        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_TOUCH);
     } else {
-        h->restoreLastConfig();
+        toolChanged = toolHandler->pointActiveToolToToolbarTool();
     }
 
-    return false;
+    if (toolChanged)
+        toolHandler->fireToolChanged();
+    return true;
 }
 
 /**

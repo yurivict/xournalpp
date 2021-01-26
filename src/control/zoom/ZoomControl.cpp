@@ -3,10 +3,80 @@
 #include <cmath>
 
 #include "control/Control.h"
-#include "gui/Layout.h"
-#include "gui/PageView.h"
 #include "gui/XournalView.h"
-#include "gui/widgets/XournalWidget.h"
+
+auto onScrolledwindowMainScrollEvent(GtkWidget* widget, GdkEventScroll* event, ZoomControl* zoom) -> bool {
+    guint state = event->state & gtk_accelerator_get_default_mod_mask();
+
+    // do not handle e.g. ALT + Scroll (e.g. Compiz use this shortcut for setting transparency...)
+    if (state != 0 && (state & ~(GDK_CONTROL_MASK | GDK_SHIFT_MASK))) {
+        return true;
+    }
+
+    if (state & GDK_CONTROL_MASK) {
+        auto direction =
+                (event->direction == GDK_SCROLL_UP || (event->direction == GDK_SCROLL_SMOOTH && event->delta_y < 0)) ?
+                        ZOOM_IN :
+                        ZOOM_OUT;
+        zoom->zoomScroll(direction, {event->x, event->y});
+        return true;
+    }
+
+    // TODO(unknown): Disabling scroll here is maybe a bit hacky find a better way
+    return zoom->isZoomPresentationMode();
+}
+
+auto onTouchpadPinchEvent(GtkWidget* widget, GdkEventTouchpadPinch* event, ZoomControl* zoom) -> bool {
+    if (event->type == GDK_TOUCHPAD_PINCH && event->n_fingers == 2) {
+        utl::Point<double> center;
+        switch (event->phase) {
+            case GDK_TOUCHPAD_GESTURE_PHASE_BEGIN:
+                if (zoom->isZoomFitMode()) {
+                    zoom->setZoomFitMode(false);
+                }
+                center = {event->x, event->y};
+                // Need to adjust the center because the event coordinates are relative
+                // to the widget, not to the zoomed (and translated) view
+                center += {zoom->getVisibleRect().x, zoom->getVisibleRect().y};
+                zoom->startZoomSequence(center);
+                break;
+            case GDK_TOUCHPAD_GESTURE_PHASE_UPDATE:
+                zoom->zoomSequenceChange(event->scale, true);
+                break;
+            case GDK_TOUCHPAD_GESTURE_PHASE_END:
+                zoom->endZoomSequence();
+                break;
+            case GDK_TOUCHPAD_GESTURE_PHASE_CANCEL:
+                zoom->cancelZoomSequence();
+                break;
+        }
+        return true;
+    }
+    return false;
+}
+
+
+// Todo: try to connect this function with the "expose_event", it would be way cleaner and we dont need to align/layout
+//       the pages manually, but it only works with the top Widget (GtkWindow) for now this works "fine"
+//       see https://stackoverflow.com/questions/1060039/gtk-detecting-window-resize-from-the-user
+auto onWindowSizeChangedEvent(GtkWidget* widget, GdkEvent* event, ZoomControl* zoom) -> bool {
+    g_assert_true(widget != zoom->view->getWidget());
+    auto layout = gtk_xournal_get_layout(zoom->view->getWidget());
+    // Todo (fabian): The following code is a hack.
+    //    Problem size-allocate:
+    //    when using the size-allocate signal, we cant use layout->recalculate() directly.
+    //    But using the xournal-widgets allocation is wrong, since the calculation is skipped already.
+    //    using size-allocate's allocation is wrong, since it is the alloc of the toplevel.
+    //    Problem expose-event:
+    //    when using the expose-event signal, the new Allocation is not known yet; calculation must be deferred.
+    //    (minimize / maximize wont work)
+    Util::execInUiThread([layout, zoom]() {
+        zoom->updateZoomPresentationValue();
+        zoom->updateZoomFitValue();
+        layout->recalculate();
+    });
+    return false;
+}
 
 void ZoomControl::zoomOneStep(ZoomDirection direction, utl::Point<double> zoomCenter) {
     if (this->zoomPresentationMode) {
@@ -54,8 +124,9 @@ void ZoomControl::startZoomSequence(utl::Point<double> zoomCenter) {
     auto const& view_pos = utl::Point{rect.x, rect.y};
 
     this->zoomWidgetPos = zoomCenter - view_pos;
-    this->scrollPosition = (view_pos + this->zoomWidgetPos) / this->zoom;
     this->zoomSequenceStart = this->zoom;
+
+    setScrollPositionAfterZoom(view_pos);
 }
 
 void ZoomControl::zoomSequenceChange(double zoom, bool relative) {
@@ -71,6 +142,13 @@ void ZoomControl::endZoomSequence() {
     zoomSequenceStart = -1;
 }
 
+void ZoomControl::cancelZoomSequence() {
+    if (zoomSequenceStart != -1) {
+        setZoom(zoomSequenceStart);
+        endZoomSequence();
+    }
+}
+
 auto ZoomControl::getVisibleRect() -> Rectangle<double> {
     GtkWidget* widget = view->getWidget();
     Layout* layout = gtk_xournal_get_layout(widget);
@@ -78,26 +156,47 @@ auto ZoomControl::getVisibleRect() -> Rectangle<double> {
 }
 
 void ZoomControl::setScrollPositionAfterZoom(utl::Point<double> scrollPos) {
-    this->scrollPosition = (scrollPos + this->zoomWidgetPos) / this->zoom;
+    size_t currentPageIdx = this->view->getCurrentPage();
+
+    // To get the layout, we need to call view->getWidget(), which isn't const.
+    // As such, we get the view and determine `unscaledPixels` here, rather than
+    // in `getScrollPositionAfterZoom`.
+    GtkWidget* widget = view->getWidget();
+    Layout* layout = gtk_xournal_get_layout(widget);
+
+    // TODO(personalizedrefrigerator) While this zooms in nearly where intended, it
+    //                                "jitters" while zooming if very far into the document.
+
+    // Not everything changes size as we zoom in/out. The padding, for example,
+    // remains constant!
+    this->unscaledPixels = {static_cast<double>(layout->getPaddingLeftOfPage(currentPageIdx)),
+                            static_cast<double>(layout->getPaddingAbovePage(currentPageIdx))};
+
+    // Use this->zoomWidgetPos to zoom into a location other than the top-left (e.g. where
+    // the user pinched).
+    this->scrollPosition = (scrollPos - this->unscaledPixels + this->zoomWidgetPos) / this->zoom;
 }
 
 auto ZoomControl::getScrollPositionAfterZoom() const -> utl::Point<double> {
+    //  If we aren't in a zoomSequence, `unscaledPixels`, `scrollPosition`, and `zoomWidgetPos
+    // can't be used to determine the scroll position! Return now.
     if (this->zoomSequenceStart == -1) {
         return {-1, -1};
     }
 
-    return (this->scrollPosition * this->zoom) - this->zoomWidgetPos;
+    return (this->scrollPosition * this->zoom) - this->zoomWidgetPos + this->unscaledPixels;
 }
 
 
 void ZoomControl::addZoomListener(ZoomListener* l) { this->listener.emplace_back(l); }
 
-void ZoomControl::initZoomHandler(GtkWidget* widget, XournalView* v, Control* c) {
+void ZoomControl::initZoomHandler(GtkWidget* window, GtkWidget* widget, XournalView* v, Control* c) {
     this->control = c;
     this->view = v;
-    g_signal_connect(widget, "scroll_event", G_CALLBACK(onScrolledwindowMainScrollEvent), this);
-    g_signal_connect(widget, "size-allocate", G_CALLBACK(onWidgetSizeChangedEvent), this);
-
+    gtk_widget_add_events(widget, GDK_TOUCHPAD_GESTURE_MASK);
+    g_signal_connect(widget, "scroll-event", G_CALLBACK(onScrolledwindowMainScrollEvent), this);
+    g_signal_connect(widget, "event", G_CALLBACK(onTouchpadPinchEvent), this);
+    g_signal_connect(window, "configure-event", G_CALLBACK(onWindowSizeChangedEvent), this);
     registerListener(this->control);
 }
 
@@ -140,9 +239,7 @@ void ZoomControl::setZoom100Value(double zoom100Val) {
     fireZoomRangeValueChanged();
 }
 
-auto ZoomControl::updateZoomFitValue(size_t pageNo) -> bool { return updateZoomFitValue(getVisibleRect(), pageNo); }
-
-auto ZoomControl::updateZoomFitValue(const Rectangle<double>& widget_rect, size_t pageNo) -> bool {
+auto ZoomControl::updateZoomFitValue(size_t pageNo) -> bool {
     if (pageNo == 0) {
         pageNo = view->getCurrentPage();
     }
@@ -151,6 +248,7 @@ auto ZoomControl::updateZoomFitValue(const Rectangle<double>& widget_rect, size_
         return false;
     }
 
+    Rectangle widget_rect = getVisibleRect();
     double zoom_fit_width = widget_rect.width / (page->getWidth() + 20.0);
     if (zoom_fit_width < this->zoomMin || zoom_fit_width > this->zoomMax) {
         return false;
@@ -169,8 +267,8 @@ auto ZoomControl::getZoomFitValue() const -> double { return this->zoomFitValue;
 auto ZoomControl::updateZoomPresentationValue(size_t pageNo) -> bool {
     XojPageView* page = view->getViewFor(view->getCurrentPage());
     if (!page) {
-        // no page
-        return false;
+        g_warning("Cannot update zoomPresentationValue yet. This should only happen on startup! ");
+        return true;
     }
 
     Rectangle widget_rect = getVisibleRect();
@@ -243,13 +341,9 @@ void ZoomControl::setZoomPresentationMode(bool isZoomPresentationMode) {
 
 auto ZoomControl::isZoomPresentationMode() const -> bool { return this->zoomPresentationMode; }
 
-void ZoomControl::setZoomStep(double zoomStep) {
-    this->zoomStep = zoomStep * this->zoom100Value;
-}
+void ZoomControl::setZoomStep(double zoomStep) { this->zoomStep = zoomStep * this->zoom100Value; }
 
-void ZoomControl::setZoomStepScroll(double zoomStep) {
-    this->zoomStepScroll = zoomStep * this->zoom100Value;
-}
+void ZoomControl::setZoomStepScroll(double zoomStep) { this->zoomStepScroll = zoomStep * this->zoom100Value; }
 
 void ZoomControl::pageSizeChanged(size_t page) {
     updateZoomPresentationValue(page);
@@ -259,44 +353,4 @@ void ZoomControl::pageSizeChanged(size_t page) {
 void ZoomControl::pageSelected(size_t page) {
     updateZoomPresentationValue(page);
     updateZoomFitValue(page);
-}
-
-auto ZoomControl::onScrolledwindowMainScrollEvent(GtkWidget* widget, GdkEventScroll* event, ZoomControl* zoom) -> bool {
-    guint state = event->state & gtk_accelerator_get_default_mod_mask();
-
-    // do not handle e.g. ALT + Scroll (e.g. Compiz use this shortcut for setting transparency...)
-    if (state != 0 && (state & ~(GDK_CONTROL_MASK | GDK_SHIFT_MASK))) {
-        return true;
-    }
-
-    if (state & GDK_CONTROL_MASK) {
-        auto direction =
-                (event->direction == GDK_SCROLL_UP || (event->direction == GDK_SCROLL_SMOOTH && event->delta_y < 0)) ?
-                        ZOOM_IN :
-                        ZOOM_OUT;
-        zoom->zoomScroll(direction, {event->x, event->y});
-        return true;
-    }
-
-    // TODO(unknown): Disabling scroll here is maybe a bit hacky find a better way
-    return zoom->isZoomPresentationMode();
-}
-
-
-// Todo: try to connect this function with the "expose_event", it would be way cleaner and we dont need to allign/layout
-//       the pages manually, but it only works with the top Widget (GtkWindow) for now this works fine
-//       see https://stackoverflow.com/questions/1060039/gtk-detecting-window-resize-from-the-user
-auto ZoomControl::onWidgetSizeChangedEvent(GtkWidget* widget, GdkRectangle* allocation, ZoomControl* zoom) -> bool {
-    g_assert_true(widget != zoom->view->getWidget());
-
-    Rectangle<double> r(allocation->x, allocation->y, allocation->width, allocation->height);
-
-    zoom->updateZoomPresentationValue();
-    zoom->updateZoomFitValue(r);
-
-    auto layout = gtk_xournal_get_layout(zoom->view->getWidget());
-    layout->layoutPages(allocation->width, allocation->height);
-    gtk_widget_queue_resize(zoom->view->getWidget());
-
-    return true;
 }
